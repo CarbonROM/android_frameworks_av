@@ -51,6 +51,10 @@ public:
         return mName;
     }
 
+    virtual String8 getUri() {
+        return mUri;
+    }
+
     static bool requiresDrm(int fd, int64_t offset, int64_t length, const char *mime);
 
 protected:
@@ -58,6 +62,7 @@ protected:
 
 private:
     int mFd;
+    String8 mUri;
     int64_t mOffset;
     int64_t mLength;
     Mutex mLock;
@@ -71,6 +76,7 @@ private:
     unsigned char *mDrmBuf;
 
     ssize_t readAtDRM(off64_t offset, void *data, size_t size);
+    void fetchUriFromFd(int fd);
 
     FileSource(const FileSource &);
     FileSource &operator=(const FileSource &);

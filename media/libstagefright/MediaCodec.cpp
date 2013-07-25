@@ -1564,7 +1564,8 @@ void MediaCodec::onMessageReceived(const sp<AMessage> &msg) {
                         mAnalyticsItem->setCString(kCodecCodec, mComponentName.c_str());
                     }
 
-                    if (mComponentName.startsWith("OMX.google.")) {
+                    if (mComponentName.startsWith("OMX.google.") ||
+                            mComponentName.startsWith("OMX.ffmpeg.")) {
                         mFlags |= kFlagUsesSoftwareRenderer;
                     } else {
                         mFlags &= ~kFlagUsesSoftwareRenderer;

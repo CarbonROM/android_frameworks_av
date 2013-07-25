@@ -21,13 +21,13 @@
 #include <media/IMediaExtractor.h>
 #include <media/IMediaSource.h>
 #include <media/MediaAnalyticsItem.h>
+#include <media/stagefright/DataSource.h>
 
 namespace android {
 namespace media {
 class ICas;
 };
 using namespace media;
-class DataSource;
 struct MediaSource;
 class MetaData;
 
