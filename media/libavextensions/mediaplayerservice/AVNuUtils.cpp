@@ -33,6 +33,8 @@
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
 
+#include <media/stagefright/MediaDefs.h>
+
 #include <nuplayer/NuPlayer.h>
 #include <nuplayer/NuPlayerDecoderBase.h>
 #include <nuplayer/NuPlayerDecoderPassThrough.h>
@@ -60,6 +62,7 @@ bool AVNuUtils::isByteStreamModeEnabled(const sp<MetaData> &) {
     return false;
 }
 
+
 void AVNuUtils::overWriteAudioOutputFormat(
        sp <AMessage> & /*dst*/, const sp <AMessage> & /*src*/) {
 }
@@ -72,8 +75,29 @@ uint32_t AVNuUtils::getFlags() {
     return 0;
 }
 
-audio_format_t AVNuUtils::getPCMFormat(const sp<AMessage> &) {
-    return AUDIO_FORMAT_PCM_16_BIT;
+audio_format_t AVNuUtils::getPCMFormat(const sp<AMessage> &format) {
+    AudioEncoding encoding = kAudioEncodingPcm16bit;
+    if (!format->findInt32("pcm-encoding", (int32_t*)&encoding)) {
+        ALOGW("PCM encoding not set for stream!");
+        return AUDIO_FORMAT_PCM_16_BIT;
+    }
+
+    switch (encoding) {
+        case kAudioEncodingPcm16bit:
+            return AUDIO_FORMAT_PCM_16_BIT;
+        case kAudioEncodingPcm8bit:
+            return AUDIO_FORMAT_PCM_8_BIT;
+        case kAudioEncodingPcmFloat:
+            return AUDIO_FORMAT_PCM_FLOAT;
+        case kAudioEncodingPcm24bitPacked:
+            return AUDIO_FORMAT_PCM_24_BIT_PACKED;
+        case kAudioEncodingPcm32bit:
+            return AUDIO_FORMAT_PCM_32_BIT;
+        case kAudioEncodingInvalid:
+            return AUDIO_FORMAT_INVALID;
+    }
+
+    return AUDIO_FORMAT_INVALID;
 }
 
 void AVNuUtils::checkFormatChange(bool * /*formatChange*/,
