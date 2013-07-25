@@ -25,6 +25,7 @@
 #include <media/stagefright/MediaErrors.h>
 #include <media/MediaDefs.h>
 #include "OMXUtils.h"
+#include <media/stagefright/FFMPEGSoftCodec.h>
 
 namespace android {
 
@@ -175,7 +176,7 @@ const char *GetComponentRole(bool isEncoder, const char *mime) {
     }
 
     if (i == kNumMimeToRole) {
-        return NULL;
+        return FFMPEGSoftCodec::getComponentRole(isEncoder, mime);
     }
 
     return isEncoder ? kMimeToRole[i].encoderRole

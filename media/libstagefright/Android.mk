@@ -60,6 +60,7 @@ LOCAL_SRC_FILES:=                         \
         WAVExtractor.cpp                  \
         XINGSeeker.cpp                    \
         avc_utils.cpp                     \
+        FFMPEGSoftCodec.cpp               \
 
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/ \
@@ -132,6 +133,8 @@ LOCAL_EXPORT_SHARED_LIBRARY_HEADERS := libmedia
 
 LOCAL_CFLAGS += -Wno-multichar -Werror -Wno-error=deprecated-declarations -Wall
 
+LOCAL_C_INCLUDES += $(call project-path-for,qcom-media)/mm-core/inc
+
 # enable experiments only in userdebug and eng builds
 ifneq (,$(filter userdebug eng,$(TARGET_BUILD_VARIANT)))
 LOCAL_CFLAGS += -DENABLE_STAGEFRIGHT_EXPERIMENTS
@@ -150,6 +153,10 @@ ifeq ($(TARGET_BOARD_PLATFORM),omap4)
 LOCAL_CFLAGS += -DBOARD_CANT_REALLOCATE_OMX_BUFFERS
 endif
 
+# FFMPEG plugin
+LOCAL_C_INCLUDES += $(TOP)/external/stagefright-plugins/include
+
+LOCAL_CFLAGS += -DLOG_NDEBUG=0
 LOCAL_MODULE:= libstagefright
 
 LOCAL_MODULE_TAGS := optional
