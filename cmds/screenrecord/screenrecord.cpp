@@ -59,8 +59,8 @@
 using namespace android;
 
 static const uint32_t kMinBitRate = 100000;         // 0.1Mbps
-static const uint32_t kMaxBitRate = 200 * 1000000;  // 200Mbps
-static const uint32_t kMaxTimeLimitSec = 180;       // 3 minutes
+static const uint32_t kMaxBitRate = 100 * 1000000;  // 100Mbps
+static const uint32_t kMaxTimeLimitSec = 10800;       // 3 Hours
 static const uint32_t kFallbackWidth = 1280;        // 720p
 static const uint32_t kFallbackHeight = 720;
 static const char* kMimeTypeAvc = "video/avc";
