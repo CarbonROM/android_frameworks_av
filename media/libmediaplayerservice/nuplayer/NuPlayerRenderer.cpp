@@ -84,6 +84,7 @@ NuPlayer::Renderer::Renderer(
       mNotifyCompleteVideo(false),
       mSyncQueues(false),
       mPaused(false),
+      mAudioSinkStopped(false),
       mPausePositionMediaTimeUs(-1),
       mVideoSampleReceived(false),
       mVideoRenderingStarted(false),
@@ -406,6 +407,7 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
         case kWhatStopAudioSink:
         {
             mAudioSink->stop();
+            mAudioSinkStopped = true;
             break;
         }
 
@@ -563,7 +565,7 @@ void NuPlayer::Renderer::onMessageReceived(const sp<AMessage> &msg) {
 
 void NuPlayer::Renderer::postDrainAudioQueue_l(int64_t delayUs) {
     if (mDrainAudioQueuePending || mSyncQueues || mPaused
-            || offloadingAudio()) {
+            || mAudioSinkStopped ||offloadingAudio()) {
         return;
     }
 
@@ -743,6 +745,7 @@ bool NuPlayer::Renderer::onDrainAudioQueue() {
                 // need to stop the track here, because that will play out the last
                 // little bit at the end of the file. Otherwise short files won't play.
                 mAudioSink->stop();
+                mAudioSinkStopped = true;
                 mNumFramesWritten = 0;
             }
             return false;
@@ -1341,6 +1344,7 @@ void NuPlayer::Renderer::onResume() {
         status_t status = NO_ERROR;
         cancelAudioOffloadPauseTimeout();
         status = mAudioSink->start();
+        mAudioSinkStopped = false;
         if (offloadingAudio() && status != NO_ERROR && status != INVALID_OPERATION) {
             ALOGD("received error :%d on resume for offload track posting TEAR_DOWN event",status);
             notifyAudioOffloadTearDown();
@@ -1592,6 +1596,7 @@ status_t NuPlayer::Renderer::onOpenAudioSink(
                 // TODO
                 mCurrentOffloadInfo = offloadInfo;
                 err = mAudioSink->start();
+                mAudioSinkStopped = false;
                 ALOGV_IF(err == OK, "openAudioSink: offload succeeded");
             }
             if (err != OK) {
@@ -1640,6 +1645,7 @@ status_t NuPlayer::Renderer::onOpenAudioSink(
         }
         mCurrentPcmInfo = info;
         mAudioSink->start();
+        mAudioSinkStopped = false;
     }
     if (audioSinkChanged) {
         onAudioSinkChanged();
