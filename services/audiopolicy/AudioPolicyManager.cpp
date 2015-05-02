@@ -2215,12 +2215,12 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
                 case AUDIO_SOURCE_VOICE_COMMUNICATION:
                     if(prop_voip_enabled) {
                        ALOGD("BLOCKING VoIP request during incall mode for inputSource: %d ",inputSource);
-                       return 0;
+                       return NO_INIT;
                     }
                 break;
                 default:
                     ALOGD("BLOCKING input during incall mode for inputSource: %d ",inputSource);
-                return 0;
+                return NO_INIT;
             }
         }
     }//check for VoIP flag
@@ -2234,7 +2234,7 @@ status_t AudioPolicyManager::getInputForAttr(const audio_attributes_t *attr,
         {
             if(inputSource == AUDIO_SOURCE_VOICE_COMMUNICATION) {
                 ALOGD("BLOCKING VoIP request during incall mode for inputSource: %d ",inputSource);
-                return 0;
+                return NO_INIT;
             }
         }
     }
@@ -6918,7 +6918,7 @@ status_t AudioPolicyManager::checkAndSetVolume(audio_stream_type_t stream,
         // enabled
         if (stream == AUDIO_STREAM_BLUETOOTH_SCO) {
             mpClientInterface->setStreamVolume(AUDIO_STREAM_VOICE_CALL, volume, output, delayMs);
-#ifdef AUDIO_EXTN_FM_ENABLED
+#if defined(AUDIO_EXTN_FM_ENABLED) || defined(MTK_HARDWARE)
         } else if (stream == AUDIO_STREAM_MUSIC &&
                    output == mPrimaryOutput) {
             if (volume >= 0) {
