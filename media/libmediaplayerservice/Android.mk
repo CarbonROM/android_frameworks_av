@@ -63,6 +63,7 @@ LOCAL_C_INCLUDES :=                                                 \
     frameworks/native/include/media/hardware                 \
     external/tremolo/Tremolo                                 \
     frameworks/av/media/libavextensions                      \
+    frameworks/av/media/libstagefright/mpeg2ts               \
 
 LOCAL_CFLAGS += -Werror -Wno-error=deprecated-declarations -Wall
 

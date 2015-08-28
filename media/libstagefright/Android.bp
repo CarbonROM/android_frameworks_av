@@ -71,6 +71,7 @@ cc_library_shared {
         "frameworks/native/include/media/openmax",
         "frameworks/native/include/media/hardware",
         "frameworks/av/media/libavextensions",
+        "frameworks/av/media/libstagefright/mpeg2ts",
     ],
 
     shared_libs: [
