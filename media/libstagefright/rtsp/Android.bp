@@ -27,6 +27,8 @@ cc_library_static {
     include_dirs: [
         "frameworks/av/media/libstagefright",
         "frameworks/native/include/media/openmax",
+        "frameworks/av/media/libavextensions",
+        "frameworks/av/media/libmediaplayerservice",
     ],
 
     arch: {
