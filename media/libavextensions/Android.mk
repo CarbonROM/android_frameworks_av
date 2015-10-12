@@ -15,7 +15,7 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/native/include/media/openmax \
         $(TOP)/external/flac/include \
         $(TOP)/system/core/base/include \
-        $(TOP)/hardware/qcom/media/mm-core/inc
+        $(TOP)/$(call project-path-for,qcom-media)/mm-core/inc
 
 LOCAL_SHARED_LIBRARIES += \
         libcrypto \
@@ -58,7 +58,7 @@ LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/native/include/media/openmax \
         $(TOP)/external/flac/include \
         $(TOP)/system/core/base/include \
-        $(TOP)/hardware/qcom/media/mm-core/inc
+        $(TOP)/$(call project-path-for,qcom-media)/mm-core/inc
 
 LOCAL_SHARED_LIBRARIES += \
         libhidlbase \
