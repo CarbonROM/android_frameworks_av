@@ -204,6 +204,8 @@ protected:
 
     StagefrightRecorder(const StagefrightRecorder &);
     StagefrightRecorder &operator=(const StagefrightRecorder &);
+
+    status_t setupWAVERecording();
 };
 
 }  // namespace android
