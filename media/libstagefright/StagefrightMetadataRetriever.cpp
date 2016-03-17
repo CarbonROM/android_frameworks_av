@@ -663,6 +663,10 @@ void StagefrightMetadataRetriever::parseMetaData() {
 
     size_t numTracks = mExtractor->countTracks();
 
+    if (numTracks == 0) {      //If no tracks available, corrupt or not valid stream
+        return;
+    }
+
     char tmp[32];
     sprintf(tmp, "%zu", numTracks);
 
@@ -686,6 +690,9 @@ void StagefrightMetadataRetriever::parseMetaData() {
     String8 timedTextLang;
     for (size_t i = 0; i < numTracks; ++i) {
         sp<MetaData> trackMeta = mExtractor->getTrackMetaData(i);
+        if (trackMeta == NULL) {
+            continue;
+        }
 
         if (trackMeta == NULL) {
             continue;
