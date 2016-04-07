@@ -83,6 +83,9 @@ cc_library_shared {
         Qcom_bsp_legacy: {
             cflags: ["-DQCOM_BSP_LEGACY"],
         },
+        QTI_flac_decoder: {
+            cflags: ["-DQTI_FLAC_DECODER"],
+        },
     },
 }
 

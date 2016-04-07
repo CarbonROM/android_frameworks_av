@@ -25,7 +25,7 @@ LOCAL_C_INCLUDES := \
 	frameworks/av/media/libstagefright/timedtext           \
 	frameworks/av/media/libmediaplayerservice              \
 	frameworks/native/include/media/openmax                \
-    frameworks/av/media/libavextensions                    \
+    frameworks/av/media/libavextensions
 
 LOCAL_CFLAGS += -Werror -Wall
 
