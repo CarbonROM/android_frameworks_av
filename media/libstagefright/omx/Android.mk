@@ -56,6 +56,12 @@ LOCAL_EXPORT_C_INCLUDES := \
 LOCAL_EXPORT_SHARED_LIBRARY_HEADERS := \
         android.hidl.memory@1.0
 
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_FLAC_DECODER)),true)
+LOCAL_CFLAGS += -DQTI_FLAC_DECODER
+endif
+endif
+
 ifneq ($(filter msm7x27a msm7x30 msm8660 msm8960,$(TARGET_BOARD_PLATFORM)),)
 LOCAL_CFLAGS += -DQCOM_BSP_LEGACY
 endif
