@@ -27,7 +27,13 @@ cc_library_static {
         "WebmWriter.cpp",
     ],
 
-    include_dirs: ["frameworks/av/include"],
+    include_dirs: [
+        "frameworks/av/include",
+        "frameworks/av/media/libavextensions",
+        "frameworks/av/media/libstagefright/mpeg2ts",
+        "frameworks/native/include/media/openmax",
+        "external/boringssl/include",
+    ],
 
     shared_libs: [
         "libstagefright_foundation",
