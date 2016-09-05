@@ -114,6 +114,7 @@ protected:
     int32_t mRotationDegrees;  // Clockwise
     int32_t mLatitudex10000;
     int32_t mLongitudex10000;
+    int64_t mStartTimeUs;
     int32_t mStartTimeOffsetMs;
     int32_t mTotalBitRate;
 
