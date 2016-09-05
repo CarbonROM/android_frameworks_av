@@ -1745,6 +1745,7 @@ status_t StagefrightRecorder::setupMPEG4orWEBMRecording() {
 
 void StagefrightRecorder::setupMPEG4orWEBMMetaData(sp<MetaData> *meta) {
     int64_t startTimeUs = systemTime() / 1000;
+    mStartTimeUs = startTimeUs;
     (*meta)->setInt64(kKeyTime, startTimeUs);
     (*meta)->setInt32(kKeyFileType, mOutputFormat);
     (*meta)->setInt32(kKeyBitRate, mTotalBitRate);
@@ -1781,6 +1782,11 @@ status_t StagefrightRecorder::pause() {
     }
 
     mPauseStartTimeUs = systemTime() / 1000;
+    // if pause issued before acutal recording started
+    // set it to actual started time
+    if (mPauseStartTimeUs < (mStartTimeUs + mStartTimeOffsetMs * 1000)) {
+        mPauseStartTimeUs = mStartTimeUs + mStartTimeOffsetMs *1000;
+    }
 
     return OK;
 }
@@ -1796,10 +1802,16 @@ status_t StagefrightRecorder::resume() {
         return OK;
     }
 
-    // 30 ms buffer to avoid timestamp overlap
-    mTotalPausedDurationUs +=
-        (systemTime() / 1000) - mPauseStartTimeUs -
-        (30000 * (mCaptureFpsEnable ? (mCaptureFps / mFrameRate):1));
+    // if resume happened before the actual recording started, set
+    // the total paused duration to 0
+    if ((systemTime()/1000 - mStartTimeUs)/1000 <  mStartTimeOffsetMs) {
+        mTotalPausedDurationUs = 0;
+    } else {
+        // 30 ms buffer to avoid timestamp overlap
+        mTotalPausedDurationUs +=
+            (systemTime() / 1000) - mPauseStartTimeUs -
+            (30000 * (mCaptureFpsEnable ? (mCaptureFps / mFrameRate):1));
+    }
     double timeOffset = -mTotalPausedDurationUs;
     if (mCaptureFpsEnable) {
         timeOffset *= mCaptureFps / mFrameRate;
@@ -1830,6 +1842,7 @@ status_t StagefrightRecorder::stop() {
         err = mWriter->stop();
         mWriter.clear();
     }
+    mStartTimeUs = 0;
     mTotalPausedDurationUs = 0;
     mPauseStartTimeUs = 0;
 
@@ -1894,6 +1907,7 @@ status_t StagefrightRecorder::reset() {
     mAudioTimeScale  = -1;
     mVideoTimeScale  = -1;
     mCameraId        = 0;
+    mStartTimeUs     = 0;
     mStartTimeOffsetMs = -1;
     mVideoEncoderProfile = -1;
     mVideoEncoderLevel   = -1;
