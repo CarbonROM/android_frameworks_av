@@ -675,6 +675,7 @@ protected:
 
     // ThreadBase virtuals
     virtual     void        preExit();
+    virtual     void        onIdleMixer();
 
     virtual     bool        keepWakeLock() const { return true; }
     virtual     void        acquireWakeLock_l() {
@@ -995,6 +996,7 @@ protected:
                 bool        mHwSupportsPause;
                 bool        mHwPaused;
                 bool        mFlushPending;
+                bool        mHwSupportsSuspend;
 };
 
 class MixerThread : public PlaybackThread {
@@ -1036,6 +1038,7 @@ protected:
     virtual     void        threadLoop_mix();
     virtual     void        threadLoop_sleepTime();
     virtual     void        threadLoop_removeTracks(const Vector< sp<Track> >& tracksToRemove);
+    virtual     void        onIdleMixer();
     virtual     uint32_t    correctLatency_l(uint32_t latency) const;
 
     virtual     status_t    createAudioPatch_l(const struct audio_patch *patch,
@@ -1059,6 +1062,7 @@ private:
                 // accessible only within the threadLoop(), no locks required
                 //          mFastMixer->sq()    // for mutating and pushing state
                 int32_t     mFastMixerFutex;    // for cold idle
+                int64_t     mIdleTimeOffsetUs;
 
                 std::atomic_bool mMasterMono;
 public:
