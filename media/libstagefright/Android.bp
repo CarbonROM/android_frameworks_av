@@ -146,6 +146,9 @@ cc_library_shared {
             cant_reallocate_omx_buffers: {
                 cflags: ["-DBOARD_CANT_REALLOCATE_OMX_BUFFERS"],
             },
+            Has_legacy_camera_hal1: {
+                cflags: ["-DCAMCORDER_GRALLOC_SOURCE"],
+            },
         },
     },
 
