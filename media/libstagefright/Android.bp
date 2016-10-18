@@ -154,6 +154,9 @@ cc_library_shared {
         QTI_flac_decoder: {
             cflags: ["-DQTI_FLAC_DECODER"],
         },
+        Has_legacy_camera_hal1: {
+            cflags: ["-DCAMCORDER_GRALLOC_SOURCE"],
+        },
     },
 
     sanitize: {
