@@ -102,6 +102,10 @@ LOCAL_SHARED_LIBRARIES := \
         libz \
         libpowermanager
 
+ifeq ($(TARGET_USE_AVC_BASELINE_PROFILE), true)
+LOCAL_CFLAGS += -DUSE_AVC_BASELINE_PROFILE
+endif
+
 LOCAL_STATIC_LIBRARIES := \
         libstagefright_color_conversion \
         libyuv_static \
