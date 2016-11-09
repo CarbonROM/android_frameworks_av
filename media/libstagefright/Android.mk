@@ -124,8 +124,10 @@ LOCAL_SHARED_LIBRARIES += \
         libdl \
         libRScpp \
 
+ifneq ($(TARGET_USES_MEDIA_EXTENSIONS),true)
 ifeq ($(TARGET_HAS_LEGACY_CAMERA_HAL1),true)
 LOCAL_CFLAGS += -DCAMCORDER_GRALLOC_SOURCE
+endif
 endif
 
 ifeq ($(BOARD_USE_SAMSUNG_CAMERAFORMAT_NV21), true)
