@@ -141,8 +141,18 @@ LOCAL_SHARED_LIBRARIES += \
         libdl \
         libRScpp \
 
+ifeq ($(BOARD_USE_SAMSUNG_CAMERAFORMAT_NV21), true)
+# This needs flag requires the following string constant in
+# CameraParametersExtra.h:
+#
+# const char CameraParameters::PIXEL_FORMAT_YUV420SP_NV21[] = "nv21";
+LOCAL_CFLAGS += -DUSE_SAMSUNG_CAMERAFORMAT_NV21
+endif
+
+ifneq ($(TARGET_USES_MEDIA_EXTENSIONS),true)
 ifeq ($(TARGET_HAS_LEGACY_CAMERA_HAL1),true)
 LOCAL_CFLAGS += -DCAMCORDER_GRALLOC_SOURCE
+endif
 endif
 
 LOCAL_CFLAGS += -Wno-multichar -Werror -Wno-error=deprecated-declarations -Wall
