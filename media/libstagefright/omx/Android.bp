@@ -86,6 +86,12 @@ cc_library_shared {
         QTI_flac_decoder: {
             cflags: ["-DQTI_FLAC_DECODER"],
         },
+        Uses_media_extensions: {
+            cflags: ["-DCAMCORDER_GRALLOC_SOURCECONDITION1"],
+        },
+        Has_legacy_camera_hal1: {
+            cflags: ["-DCAMCORDER_GRALLOC_SOURCECONDITION2"],
+        },
     },
 }
 
