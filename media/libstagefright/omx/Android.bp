@@ -95,6 +95,12 @@ cc_library_shared {
             qcom_bsp_legacy: {
                 cflags: ["-DQCOM_BSP_LEGACY"],
             },
+            uses_media_extensions: {
+                cflags: ["-DUSES_MEDIA_EXTENSIONS"],
+            },
+            has_legacy_camera_hal1: {
+                cflags: ["-DHAS_LEGACY_CAMERA_HAL1"],
+            },
         },
     },
 }
