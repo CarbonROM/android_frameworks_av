@@ -25,7 +25,6 @@
 #include <time.h>
 #include <math.h>
 #include <audio_effects/effect_visualizer.h>
-#include <cutils/log.h>
 
 
 extern "C" {
@@ -602,9 +601,14 @@ int Visualizer_command(effect_handle_t self, uint32_t cmdCode, uint32_t cmdSize,
     case VISUALIZER_CMD_MEASURE: {
         if (pReplyData == NULL || replySize == NULL ||
                 *replySize < (sizeof(int32_t) * MEASUREMENT_COUNT)) {
-            ALOGV("VISUALIZER_CMD_MEASURE() error *replySize %" PRIu32
-                    " < (sizeof(int32_t) * MEASUREMENT_COUNT) %" PRIu32, *replySize,
-                    sizeof(int32_t) * MEASUREMENT_COUNT);
+            if (replySize == NULL) {
+                ALOGV("VISUALIZER_CMD_MEASURE() error replySize NULL");
+            } else {
+                ALOGV("VISUALIZER_CMD_MEASURE() error *replySize %" PRIu32
+                        " < (sizeof(int32_t) * MEASUREMENT_COUNT) %" PRIu32,
+                        *replySize,
+                        uint32_t(sizeof(int32_t)) * MEASUREMENT_COUNT);
+            }
             android_errorWriteLog(0x534e4554, "30229821");
             return -EINVAL;
         }

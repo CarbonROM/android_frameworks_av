@@ -142,6 +142,17 @@ NuPlayer::Renderer::~Renderer() {
         mAudioSink->flush();
         mAudioSink->close();
     }
+
+    // Try to avoid racing condition in case callback is still on.
+    Mutex::Autolock autoLock(mLock);
+    mUseAudioCallback = false;
+    flushQueue(&mAudioQueue);
+    flushQueue(&mVideoQueue);
+    mWakeLock.clear();
+    mMediaClock.clear();
+    mVideoScheduler.clear();
+    mNotify.clear();
+    mAudioSink.clear();
 }
 
 void NuPlayer::Renderer::queueBuffer(
@@ -745,7 +756,7 @@ size_t NuPlayer::Renderer::AudioSinkCallback(
         case MediaPlayerBase::AudioSink::CB_EVENT_STREAM_END:
         {
             ALOGV("AudioSink::CB_EVENT_STREAM_END");
-            me->notifyEOS(true /* audio */, ERROR_END_OF_STREAM);
+            me->notifyEOSCallback();
             break;
         }
 
@@ -758,6 +769,16 @@ size_t NuPlayer::Renderer::AudioSinkCallback(
     }
 
     return 0;
+}
+
+void NuPlayer::Renderer::notifyEOSCallback() {
+    Mutex::Autolock autoLock(mLock);
+
+    if (!mUseAudioCallback) {
+        return;
+    }
+
+    notifyEOS(true /* audio */, ERROR_END_OF_STREAM);
 }
 
 size_t NuPlayer::Renderer::fillAudioBuffer(void *buffer, size_t size) {
@@ -1191,8 +1212,10 @@ void NuPlayer::Renderer::postDrainVideoQueue() {
             msg->setWhat(kWhatPostDrainVideoQueue);
             msg->post(postDelayUs);
             mVideoScheduler->restart();
-            ALOGI("possible video time jump of %dms or uninitialized media clock, retrying in %dms",
-                    (int)(delayUs / 1000), (int)(postDelayUs / 1000));
+            ALOGI("possible video time jump of %dms (%lld : %lld) or uninitialized media clock,"
+                    " retrying in %dms",
+                    (int)(delayUs / 1000), (long long)mediaTimeUs,
+                    (long long)mAudioFirstAnchorTimeMediaUs, (int)(postDelayUs / 1000));
             mDrainVideoQueuePending = true;
             return;
         }
