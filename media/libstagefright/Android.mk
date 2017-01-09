@@ -1,3 +1,16 @@
+# This file was modified by Dolby Laboratories, Inc. The portions of the
+# code that are surrounded by "DOLBY..." are copyrighted and
+# licensed separately, as follows:
+#
+# (C)  2016 Dolby Laboratories, Inc.
+# All rights reserved.
+#
+# This program is protected under international and U.S. Copyright laws as
+# an unpublished work. This program is confidential and proprietary to the
+# copyright owners. Reproduction or disclosure, in whole or in part, or the
+# production of derivative works therefrom without the express permission of
+# the copyright owners is prohibited.
+#
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
@@ -66,6 +79,8 @@ LOCAL_SRC_FILES:=                         \
 
 LOCAL_C_INCLUDES:= \
         $(TOP)/frameworks/av/include/media/ \
+        $(TOP)/frameworks/av/media/libavextensions \
+        $(TOP)/frameworks/av/media/libstagefright/mpeg2ts \
         $(TOP)/frameworks/av/include/media/stagefright/timedtext \
         $(TOP)/frameworks/native/include/media/hardware \
         $(TOP)/frameworks/native/include/media/openmax \
@@ -100,7 +115,7 @@ LOCAL_SHARED_LIBRARIES := \
         libutils \
         libvorbisidec \
         libz \
-        libpowermanager
+        libpowermanager \
 
 LOCAL_STATIC_LIBRARIES := \
         libstagefright_color_conversion \
@@ -117,6 +132,8 @@ LOCAL_STATIC_LIBRARIES := \
         libFLAC \
         libmedia_helper \
 
+LOCAL_WHOLE_STATIC_LIBRARIES := libavextensions
+
 LOCAL_SHARED_LIBRARIES += \
         libstagefright_enc_common \
         libstagefright_avc_common \
@@ -124,8 +141,18 @@ LOCAL_SHARED_LIBRARIES += \
         libdl \
         libRScpp \
 
+ifeq ($(BOARD_USE_SAMSUNG_CAMERAFORMAT_NV21), true)
+# This needs flag requires the following string constant in
+# CameraParametersExtra.h:
+#
+# const char CameraParameters::PIXEL_FORMAT_YUV420SP_NV21[] = "nv21";
+LOCAL_CFLAGS += -DUSE_SAMSUNG_CAMERAFORMAT_NV21
+endif
+
+ifneq ($(TARGET_USES_MEDIA_EXTENSIONS),true)
 ifeq ($(TARGET_HAS_LEGACY_CAMERA_HAL1),true)
 LOCAL_CFLAGS += -DCAMCORDER_GRALLOC_SOURCE
+endif
 endif
 
 LOCAL_CFLAGS += -Wno-multichar -Werror -Wno-error=deprecated-declarations -Wall
@@ -133,6 +160,17 @@ LOCAL_CFLAGS += -Wno-multichar -Werror -Wno-error=deprecated-declarations -Wall
 # enable experiments only in userdebug and eng builds
 ifneq (,$(filter userdebug eng,$(TARGET_BUILD_VARIANT)))
 LOCAL_CFLAGS += -DENABLE_STAGEFRIGHT_EXPERIMENTS
+endif
+# DOLBY_START
+ifeq ($(strip $(DOLBY_ENABLE)),true)
+    LOCAL_CFLAGS += $(dolby_cflags)
+endif
+# DOLBY_END
+
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_FLAC_DECODER)),true)
+LOCAL_CFLAGS += -DQTI_FLAC_DECODER
+endif
 endif
 
 LOCAL_CLANG := true
