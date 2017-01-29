@@ -450,6 +450,8 @@ status_t WAVSource::read(
     size_t maxBytesToRead =
         mBitsPerSample == 8 ? kMaxFrameSize / 2 : 
         (mBitsPerSample == 24 ? 3*(kMaxFrameSize/3): kMaxFrameSize);
+    ALOGV("%s mBitsPerSample %d, kMaxFrameSize %zu, ",
+          __func__, mBitsPerSample, kMaxFrameSize);
 
     size_t maxBytesAvailable =
         (mCurrentPos - mOffset >= (off64_t)mSize)
