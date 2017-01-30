@@ -153,6 +153,9 @@ cc_library_shared {
             has_legacy_camera_hal1: {
                 cflags: ["-DCAMCORDER_GRALLOC_SOURCE"],
             },
+            use_legacy_rescaling: {
+                cflags: ["-DUSE_LEGACY_RESCALING"],
+            },
         },
     },
 
