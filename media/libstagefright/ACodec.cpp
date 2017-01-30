@@ -7989,6 +7989,15 @@ bool ACodec::OutputPortSettingsChangedState::onOMXEvent(
                     return false;
                 }
 
+#ifdef USE_LEGACY_RESCALING
+                // Resolution is about to change
+                // Make sure the decoder knows
+                sp<AMessage> reply = new AMessage(kWhatOutputBufferDrained, mCodec);
+                mCodec->onOutputFormatChanged();
+                mCodec->addKeyFormatChangesToRenderBufferNotification(reply);
+                mCodec->sendFormatChange();
+#endif
+
                 ALOGV("[%s] Output port now reenabled.", mCodec->mComponentName.c_str());
 
                 if (mCodec->mExecutingState->active()) {
@@ -8002,6 +8011,15 @@ bool ACodec::OutputPortSettingsChangedState::onOMXEvent(
 
             return false;
         }
+
+#ifdef USE_LEGACY_RESCALING
+        case OMX_EventPortSettingsChanged:
+            // Exynos OMX wants to share its' output crop
+            // For some reason trying to handle this here doesn't do anything
+            // We'll do it right before transitioning to ExecutingState
+            return true;
+        break;
+#endif
 
         default:
             return BaseState::onOMXEvent(event, data1, data2);
