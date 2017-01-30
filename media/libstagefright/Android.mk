@@ -130,6 +130,10 @@ LOCAL_SHARED_LIBRARIES += \
 
 LOCAL_EXPORT_SHARED_LIBRARY_HEADERS := libmedia
 
+ifeq ($(TARGET_OMX_LEGACY_RESCALING),true)
+LOCAL_CFLAGS += -DUSE_LEGACY_RESCALING
+endif
+
 LOCAL_CFLAGS += -Wno-multichar -Werror -Wno-error=deprecated-declarations -Wall
 
 # enable experiments only in userdebug and eng builds
