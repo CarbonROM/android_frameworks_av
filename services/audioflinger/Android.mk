@@ -106,6 +106,14 @@ LOCAL_CFLAGS += -DSTATE_QUEUE_INSTANTIATIONS='"StateQueueInstantiations.cpp"'
 LOCAL_CFLAGS += -fvisibility=hidden
 
 LOCAL_CFLAGS += -Werror -Wall
+
+ifeq ($(AUDIO_FINE_TUNED_OPTIMIZATIONS),true)
+LOCAL_CFLAGS += -O1 \
+        -foptimize-sibling-calls \
+        -frerun-cse-after-loop \
+        -fstrict-aliasing
+endif
+
 # DOLBY_START
 ifeq ($(strip $(DOLBY_ENABLE)),true)
     LOCAL_CFLAGS += $(dolby_cflags)
