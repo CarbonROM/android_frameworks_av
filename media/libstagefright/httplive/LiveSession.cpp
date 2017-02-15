@@ -54,7 +54,7 @@ const int64_t LiveSession::kReadyMarkUs = 5000000ll;
 const int64_t LiveSession::kPrepareMarkUs = 1500000ll;
 const int64_t LiveSession::kUnderflowMarkUs = 1000000ll;
 
-struct LiveSession::BandwidthEstimator : public RefBase {
+struct LiveSession::BandwidthEstimator : public LiveSession::BandwidthBaseEstimator {
     BandwidthEstimator();
 
     void addBandwidthMeasurement(size_t numBytes, int64_t delayUs);
@@ -429,6 +429,14 @@ status_t LiveSession::dequeueAccessUnit(
             } else {
                 mDiscontinuityAbsStartTimesUs.add(strm.mCurDiscontinuitySeq, timeUs);
                 firstTimeUs = timeUs;
+                // we have adjusted a/v both start from last preceding IDR position, it's always
+                // before original seek position, so we need to adjust mLastSeekTimeUs to the
+                // actual start position
+                int64_t newSeekTimeUs = -1;
+                if ((*accessUnit)->meta()->findInt64("newSeekTimeUs", &newSeekTimeUs)
+                        && newSeekTimeUs != -1) {
+                    mLastSeekTimeUs = newSeekTimeUs;
+                }
             }
 
             strm.mLastDequeuedTimeUs = timeUs;
@@ -1064,6 +1072,7 @@ void LiveSession::onMasterPlaylistFetched(const sp<AMessage> &msg) {
                 itemsWithVideo.push(item);
             }
         }
+#if 0
         // remove the audio-only variants if we have at least one with video
         if (!itemsWithVideo.empty()
                 && itemsWithVideo.size() < mBandwidthItems.size()) {
@@ -1072,7 +1081,7 @@ void LiveSession::onMasterPlaylistFetched(const sp<AMessage> &msg) {
                 mBandwidthItems.push(itemsWithVideo[i]);
             }
         }
-
+#endif
         CHECK_GT(mBandwidthItems.size(), 0u);
         initialBandwidth = mBandwidthItems[0].mBandwidth;
 
