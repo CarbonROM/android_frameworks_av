@@ -533,6 +533,11 @@ void CameraClient::releaseRecordingFrameHandle(native_handle_t *handle) {
     metadata->pHandle = handle;
 
     mHardware->releaseRecordingFrame(dataPtr);
+
+#ifdef CAMERASERVICE_CLOSES_NATIVE_HANDLES
+    native_handle_close(handle);
+    native_handle_delete(handle);
+#endif
 }
 
 void CameraClient::releaseRecordingFrameHandleBatch(const std::vector<native_handle_t*>& handles) {
