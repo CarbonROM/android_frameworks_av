@@ -118,6 +118,10 @@ endif
 # Workaround for invalid unused-lambda-capture warning http://b/38349491
 LOCAL_CLANG_CFLAGS += -Wno-error=unused-lambda-capture
 
+ifeq ($(TARGET_CAMERASERVICE_CLOSES_NATIVE_HANDLES),true)
+    LOCAL_CFLAGS += -DCAMERASERVICE_CLOSES_NATIVE_HANDLES
+endif
+
 LOCAL_MODULE:= libcameraservice
 
 include $(BUILD_SHARED_LIBRARY)
