@@ -210,10 +210,15 @@ cc_library_shared {
         "libc_malloc_debug_backtrace",
     ],
 
+    whole_static_libs: [
+        "libavmediaextentions",
+    ],
+
     include_dirs: [
         "frameworks/native/include/media/openmax",
         "frameworks/av/include/media/",
         "frameworks/av/media/libstagefright",
+        "frameworks/av/media/libavextensions",
     ],
 
     export_include_dirs: [
