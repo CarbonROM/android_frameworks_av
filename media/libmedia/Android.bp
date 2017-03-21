@@ -196,6 +196,10 @@ cc_library_shared {
         "android.hardware.graphics.bufferqueue@1.0",
     ],
 
+    whole_static_libs: [
+        "libavextensions",
+    ],
+
     export_shared_lib_headers: [
         "libbinder",
         "libicuuc",
@@ -214,6 +218,7 @@ cc_library_shared {
         "frameworks/native/include/media/openmax",
         "frameworks/av/include/media/",
         "frameworks/av/media/libstagefright",
+        "frameworks/av/media/libavextensions",
     ],
 
     export_include_dirs: [
