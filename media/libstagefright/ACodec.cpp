@@ -835,6 +835,11 @@ status_t ACodec::setPortMode(int32_t portIndex, IOMX::PortMode mode) {
 }
 
 status_t ACodec::allocateBuffersOnPort(OMX_U32 portIndex) {
+    if (portIndex == kPortIndexInputExtradata ||
+            portIndex == kPortIndexOutputExtradata) {
+        return OK;
+    }
+
     CHECK(portIndex == kPortIndexInput || portIndex == kPortIndexOutput);
 
     if (getTrebleFlag()) {
@@ -1579,6 +1584,11 @@ ACodec::BufferInfo *ACodec::dequeueBufferFromNativeWindow() {
 }
 
 status_t ACodec::freeBuffersOnPort(OMX_U32 portIndex) {
+    if (portIndex == kPortIndexInputExtradata ||
+            portIndex == kPortIndexOutputExtradata) {
+        return OK;
+    }
+
     if (portIndex == kPortIndexInput) {
         mBufferChannel->setInputBufferArray({});
     } else {
@@ -6834,6 +6844,9 @@ void ACodec::LoadedToIdleState::stateEntered() {
         if (mCodec->allYourBuffersAreBelongToUs(kPortIndexOutput)) {
             mCodec->freeBuffersOnPort(kPortIndexOutput);
         }
+        if (mCodec->allYourBuffersAreBelongToUs(kPortIndexOutputExtradata)) {
+            mCodec->freeBuffersOnPort(kPortIndexOutputExtradata);
+        }
 
         mCodec->changeState(mCodec->mLoadedState);
     }
@@ -6848,6 +6861,11 @@ status_t ACodec::LoadedToIdleState::allocateBuffers() {
     err = mCodec->allocateBuffersOnPort(kPortIndexOutput);
     if (err != OK) {
         return err;
+    }
+
+    err = mCodec->allocateBuffersOnPort(kPortIndexOutputExtradata);
+    if (err != OK) {
+        err = OK; // Ignore Extradata buffer allocation failure
     }
 
     mCodec->mCallback->onStartCompleted();
@@ -8012,6 +8030,11 @@ void ACodec::ExecutingToIdleState::changeStateIfWeOwnAllBuffers() {
             if (err == OK) {
                 err = err2;
             }
+            status_t err3 = mCodec->freeBuffersOnPort(kPortIndexOutputExtradata);
+            if (err == OK) {
+                err = err3;
+            }
+
         }
 
         if ((mCodec->mFlags & kFlagPushBlankBuffersToNativeWindowOnShutdown)
