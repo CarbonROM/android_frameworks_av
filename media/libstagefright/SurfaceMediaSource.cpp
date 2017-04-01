@@ -391,7 +391,7 @@ void SurfaceMediaSource::signalBufferReturned(MediaBuffer *buffer) {
 
     for (size_t i = 0; i < mCurrentBuffers.size(); i++) {
         curNativeHandle = mCurrentBuffers[i]->getNativeBuffer();
-        if ((mCurrentBuffers[i]->handle == bufferHandle) ||
+        if (((buffer_handle_t)mCurrentBuffers[i]->getNativeBuffer() == bufferHandle) ||
             ((buffer_handle_t)curNativeHandle == bufferHandle)) {
             mCurrentBuffers.removeAt(i);
             foundBuffer = true;
@@ -410,7 +410,7 @@ void SurfaceMediaSource::signalBufferReturned(MediaBuffer *buffer) {
 
         curNativeHandle = mSlots[id].mGraphicBuffer->getNativeBuffer();
 
-        if ((bufferHandle == mSlots[id].mGraphicBuffer->handle) ||
+        if ((bufferHandle == (buffer_handle_t)mSlots[id].mGraphicBuffer->getNativeBuffer()) ||
             (bufferHandle == (buffer_handle_t)curNativeHandle)) {
             ALOGV("Slot %d returned, matches handle = %p", id,
                     mSlots[id].mGraphicBuffer->handle);
