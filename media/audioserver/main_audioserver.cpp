@@ -39,10 +39,6 @@
 #include "RadioService.h"
 #include "SoundTriggerHwService.h"
 
-#ifdef VRAUDIOSERVICE_ENABLE
-#include "VRAudioService.h"
-#endif
-
 using namespace android;
 
 int main(int argc __unused, char **argv)
@@ -139,9 +135,6 @@ int main(int argc __unused, char **argv)
         AAudioService::instantiate();
         RadioService::instantiate();
         SoundTriggerHwService::instantiate();
-#ifdef VRAUDIOSERVICE_ENABLE
-        VRAudioServiceNative::instantiate();
-#endif
         ProcessState::self()->startThreadPool();
 
 // FIXME: remove when BUG 31748996 is fixed
