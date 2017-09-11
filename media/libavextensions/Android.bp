@@ -1,8 +1,29 @@
+bootstrap_go_package {
+    name: "soong-mediaextentions",
+    pkgPath: "android/soong/mediaextentions",
+    deps: [
+        "blueprint",
+        "blueprint-pathtools",
+        "soong",
+        "soong-android",
+        "soong-cc",
+    ],
+    srcs: [
+        "mediaextentions.go",
+    ],
+    pluginFor: ["soong_build"],
+}
+
+mediaextentions_defaults {
+    name: "mediaextentions_defaults",
+}
+
 // AV  media utils extention
 // ########################################################
 
 cc_library_static {
     name: "libavmediaextentions",
+    defaults: ["mediaextentions_defaults"],
     srcs: ["media/AVMediaUtils.cpp"],
     shared_libs: [
         "libhidlbase",
@@ -15,8 +36,7 @@ cc_library_static {
         "frameworks/av/media/libavextensions",
         "frameworks/native/include/media/hardware",
         "frameworks/native/include/media/openmax",
-        "external/flac/include",
-        "hardware/qcom/media/mm-core/inc",
+        "external/flac/include"
     ],
     cflags: [
         "-Wno-multichar",
