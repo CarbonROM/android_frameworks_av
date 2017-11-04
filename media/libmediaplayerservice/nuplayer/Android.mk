@@ -27,7 +27,7 @@ LOCAL_C_INCLUDES := \
 	frameworks/native/include/media/openmax				   \
 	frameworks/av/media/libavextensions
 
-LOCAL_CFLAGS += -Werror -Wall
+LOCAL_CFLAGS += -Werror -Wno-unused-parameter -Wall
 
 # enable experiments only in userdebug and eng builds
 ifneq (,$(filter userdebug eng,$(TARGET_BUILD_VARIANT)))
