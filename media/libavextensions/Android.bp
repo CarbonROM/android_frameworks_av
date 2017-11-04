@@ -22,3 +22,84 @@ cc_library_static {
         "-Werror",
     ],
 }
+
+
+cc_library_static {
+    name: "libavextensions",
+
+    srcs: [
+        "stagefright/ExtendedMediaDefs.cpp",
+        "stagefright/AVUtils.cpp",
+        "stagefright/AVFactory.cpp",
+    ],
+
+    include_dirs: [
+        "frameworks/av/include/media",
+        "frameworks/av/media/libstagefright",
+        "frameworks/native/include/media/hardware",
+        "frameworks/native/include/media/openmax",
+        "external/flac/include",
+        "system/core/base/include",
+    ],
+
+    shared_libs: [
+        "libcrypto",
+        "libhidlbase",
+        "liblog",
+        "libui",
+        "libgui",
+        "libcutils",
+        "libutils",
+        "libmediadrm",
+        "libnativewindow",
+        "libstagefright",
+        "android.hardware.media.omx@1.0",
+    ],
+
+    cflags: [
+        "-Wno-multichar",
+        "-Werror",
+    ],
+}
+
+
+cc_library_static {
+    name: "libavmediaserviceextensions",
+
+    srcs: [
+        "mediaplayerservice/AVMediaServiceFactory.cpp",
+        "mediaplayerservice/AVMediaServiceUtils.cpp",
+        "mediaplayerservice/AVNuFactory.cpp",
+        "mediaplayerservice/AVNuUtils.cpp",
+    ],
+
+    include_dirs: [
+        "frameworks/av/include/media",
+        "frameworks/av/media/libstagefright/rtsp",
+        "frameworks/av/media/libmediaplayerservice",
+        "frameworks/av/media/libstagefright/include",
+        "frameworks/av/media/libavextensions",
+        "frameworks/native/include/media/hardware",
+        "frameworks/native/include/media/openmax",
+        "external/flac/include",
+        "system/core/base/include",
+    ],
+
+    shared_libs: [
+        "libhidlbase",
+        "liblog",
+        "libui",
+        "libgui",
+        "libcutils",
+        "libutils",
+        "libmediadrm",
+        "libnativewindow",
+        "libstagefright",
+        "android.hardware.media.omx@1.0",
+    ],
+
+    cflags: [
+        "-Wno-multichar",
+        "-Werror",
+    ],
+}
