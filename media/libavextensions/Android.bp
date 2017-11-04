@@ -52,7 +52,6 @@ cc_library_static {
         "libutils",
         "libmediadrm",
         "libnativewindow",
-        "libstagefright",
         "android.hardware.media.omx@1.0",
     ],
 
