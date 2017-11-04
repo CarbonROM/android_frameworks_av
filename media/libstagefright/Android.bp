@@ -72,6 +72,7 @@ cc_library_shared {
         "frameworks/native/include/media/hardware",
         "frameworks/av/media/libavextensions",
         "frameworks/av/media/libstagefright/mpeg2ts",
+        "system/libhidl/transport/token/1.0/utils/include",
     ],
 
     shared_libs: [
@@ -104,9 +105,11 @@ cc_library_shared {
         "libRScpp",
         "libhidlbase",
         "libhidlmemory",
+        "libhidltransport",
         "android.hidl.allocator@1.0",
         "android.hidl.memory@1.0",
         "android.hardware.media.omx@1.0",
+        "android.hardware.media@1.0",
         "libstagefright_xmlparser@1.0",
     ],
 
