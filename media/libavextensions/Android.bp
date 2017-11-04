@@ -9,13 +9,25 @@ cc_library_static {
         "liblog",
         "libcutils",
         "libutils",
+        "libbase",
+        "libhidltransport",
+        "libhwbinder",
+        "libhidlmemory",
+        "android.hidl.memory@1.0",
+        "android.hardware.graphics.common@1.0",
+        "android.hardware.graphics.bufferqueue@1.0",
+        "android.hardware.media.omx@1.0",
+        "android.hardware.media@1.0",
     ],
     include_dirs: [
         "frameworks/av/include/media",
         "frameworks/av/media/libavextensions",
         "frameworks/native/include/media/hardware",
         "frameworks/native/include/media/openmax",
+        "frameworks/av/media/libstagefright/mpeg2ts",
         "external/flac/include",
+        "system/core/base/include",
+        "system/libhidl/transport/token/1.0/utils/include",
     ],
     cflags: [
         "-Wno-multichar",
@@ -38,8 +50,10 @@ cc_library_static {
         "frameworks/av/media/libstagefright",
         "frameworks/native/include/media/hardware",
         "frameworks/native/include/media/openmax",
+        "frameworks/av/media/libstagefright/mpeg2ts",
         "external/flac/include",
         "system/core/base/include",
+        "system/libhidl/transport/token/1.0/utils/include",
     ],
 
     shared_libs: [
@@ -53,10 +67,24 @@ cc_library_static {
         "libmediadrm",
         "libnativewindow",
         "android.hardware.media.omx@1.0",
+        "android.hardware.media@1.0",
+        "libbase",
+        "libhidlbase",
+        "libhidltransport",
+        "libhwbinder",
+        "libhidlmemory",
+        "android.hidl.memory@1.0",
+        "android.hardware.graphics.common@1.0",
+        "android.hardware.graphics.bufferqueue@1.0",
+    ],
+
+    export_shared_lib_headers: [
+        "android.hidl.memory@1.0",
     ],
 
     cflags: [
         "-Wno-multichar",
+        "-Wno-unused-parameter",
         "-Werror",
     ],
 }
@@ -78,10 +106,12 @@ cc_library_static {
         "frameworks/av/media/libmediaplayerservice",
         "frameworks/av/media/libstagefright/include",
         "frameworks/av/media/libavextensions",
+        "frameworks/av/media/libstagefright/mpeg2ts",
         "frameworks/native/include/media/hardware",
         "frameworks/native/include/media/openmax",
         "external/flac/include",
         "system/core/base/include",
+        "system/libhidl/transport/token/1.0/utils/include",
     ],
 
     shared_libs: [
@@ -95,10 +125,24 @@ cc_library_static {
         "libnativewindow",
         "libstagefright",
         "android.hardware.media.omx@1.0",
+        "android.hardware.media@1.0",
+        "libbase",
+        "libhidlbase",
+        "libhidltransport",
+        "libhwbinder",
+        "libhidlmemory",
+        "android.hidl.memory@1.0",
+        "android.hardware.graphics.common@1.0",
+        "android.hardware.graphics.bufferqueue@1.0",
+    ],
+
+    export_shared_lib_headers: [
+        "android.hidl.memory@1.0",
     ],
 
     cflags: [
         "-Wno-multichar",
+        "-Wno-unused-parameter",
         "-Werror",
     ],
 }

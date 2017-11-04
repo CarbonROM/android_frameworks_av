@@ -5,6 +5,7 @@ cc_library_static {
 
     cflags: [
         "-Werror",
+        "-Wno-unused-parameter",
         "-Wall",
     ],
 
@@ -33,11 +34,29 @@ cc_library_static {
         "frameworks/av/media/libstagefright/mpeg2ts",
         "frameworks/native/include/media/openmax",
         "external/boringssl/include",
+        "system/core/base/include",
+        "system/libhidl/transport/token/1.0/utils/include",
     ],
 
     shared_libs: [
         "libstagefright_foundation",
         "libutils",
         "liblog",
+        "libbase",
+        "libhidltransport",
+        "libhwbinder",
+        "libhidlmemory",
+        "android.hidl.memory@1.0",
+        "android.hardware.graphics.common@1.0",
+        "android.hardware.graphics.bufferqueue@1.0",
+        "android.hardware.media.omx@1.0",
+        "android.hardware.media@1.0",
+    ],
+
+    export_shared_lib_headers: [
+        "android.hidl.memory@1.0",
+        "android.hardware.media.omx@1.0",
+        "android.hardware.media@1.0",
+        "libhidlmemory",
     ],
 }
