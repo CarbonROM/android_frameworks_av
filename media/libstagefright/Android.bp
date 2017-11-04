@@ -140,6 +140,7 @@ cc_library_shared {
         "-Wno-multichar",
         "-Werror",
         "-Wno-error=deprecated-declarations",
+        "-Wno-unused-parameter",
         "-Wall",
     ],
 
