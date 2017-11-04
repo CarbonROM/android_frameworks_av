@@ -82,7 +82,7 @@ public:
             const sp<DataSource> &source, String8 *mimeType,
             float *confidence, sp<AMessage> *meta);
 
-    virtual void setExtraFlags(uint32_t flags) {}
+    virtual void setExtraFlags(uint32_t /* flags */) {}
 
 protected:
     MediaExtractor();
