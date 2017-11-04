@@ -65,7 +65,7 @@ LOCAL_C_INCLUDES :=                                                 \
     frameworks/av/media/libavextensions                      \
     frameworks/av/media/libstagefright/mpeg2ts               \
 
-LOCAL_CFLAGS += -Werror -Wno-error=deprecated-declarations -Wall
+LOCAL_CFLAGS += -Werror -Wno-error=deprecated-declarations -Wno-unused-parameter -Wall
 
 LOCAL_MODULE:= libmediaplayerservice
 
