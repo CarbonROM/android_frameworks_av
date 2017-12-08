@@ -21,6 +21,7 @@ LOCAL_SHARED_LIBRARIES := \
         libutils \
         libbinder \
         libicuuc \
+        libnativewindow \
         android.hardware.media.omx@1.0 \
 
 LOCAL_STATIC_LIBRARIES := \
