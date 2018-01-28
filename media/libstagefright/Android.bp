@@ -150,6 +150,10 @@ cc_library_shared {
             cant_reallocate_omx_buffers: {
                 cflags: ["-DBOARD_CANT_REALLOCATE_OMX_BUFFERS"],
             },
+
+            mtk_hardware: {
+                cppflags: ["-DMTK_HARDWARE"],
+            },
         },
     },
 
