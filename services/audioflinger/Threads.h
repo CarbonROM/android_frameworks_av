@@ -19,6 +19,68 @@
     #error This header file should only be included from AudioFlinger.h
 #endif
 
+#define CARBON_ACOUSTICS
+
+#ifdef CARBON_ACOUSTICS
+#pragma pack(push, 4)
+typedef struct AcousticsData
+{
+    uint32_t    m_n32Io;
+    uint32_t    m_n32Pid;
+    uint32_t    m_n32Session;
+    uint32_t    m_n32StreamType;
+} AcousticsDataType;
+#pragma pack(pop)
+
+class AcousticsThread : public Thread {
+public:
+    AcousticsThread(const sp<AudioFlinger>& audioFlinger);
+
+    void signal();
+
+    // Thread virtuals
+    bool threadLoop();
+
+    void exit();
+
+private:
+    void activeTracksChanged();
+
+    status_t getAcousticsData(Vector<AcousticsDataType> &vAcousticsData);
+
+    status_t getAcousticsDataFromMediaPlayerService(int *size, int *aActiveClientPids, int *aActiveClientSessions, int *aActiveClientStreamTypes);
+
+    const sp<IMediaPlayerService>& getMediaPlayerService();
+
+    sp<AudioFlinger::EffectModule> getMasterEffect();
+
+    status_t sendData(sp<EffectModule> effectModule, Vector<AcousticsDataType> vAcousticsData);
+
+    sp<IMediaPlayerService> sMediaPlayerService;
+
+    const sp<AudioFlinger>  mAudioFlinger;
+
+    Condition               mWaitWorkCV;
+    Mutex                   mLock;
+
+    bool                    mNeedToCheck;
+
+    effect_descriptor_t     mDescriptor;
+
+    const static unsigned int SL_CMD_SET_ACOUSTICS_DATA = 0x20001;
+    const static unsigned int ACOUSTICS_DATA_VERSION = 1;
+
+    #pragma pack(push, 4)
+    typedef struct SetAcousticsDataCommandData
+    {
+        uint32_t        m_n32Version;   // AcousticsData version
+        uint32_t        m_n32Count;             // Numbers of AcousticsData
+        char            m_acData[0];    // Buffer of AcousticsData
+    } SetAcousticsDataCommandDataType;
+    #pragma pack(pop)
+};
+#endif
+
 class ThreadBase : public Thread {
 public:
 
@@ -492,6 +554,10 @@ protected:
                 // A condition that must be evaluated by the thread loop has changed and
                 // we must not wait for async write callback in the thread loop before evaluating it
                 bool                    mSignalPending;
+
+#ifdef CARBON_ACOUSTICS
+                bool                    mbLastBufferProcessed;
+#endif
 
                 // ActiveTracks is a sorted vector of track type T representing the
                 // active tracks of threadLoop() to be considered by the locked prepare portion.
@@ -1002,6 +1068,12 @@ protected:
                 // volumes last sent to audio HAL with stream->setVolume()
                 float mLeftVolFloat;
                 float mRightVolFloat;
+#ifdef CARBON_ACOUSTICS
+public:
+                bool getAcousticsData_l(size_t index, AcousticsDataType &acousticsData);
+private:
+                SortedVector<wp<Track>>    mAcousticsMixerTracks;
+#endif
 };
 
 class MixerThread : public PlaybackThread {

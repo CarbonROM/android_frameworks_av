@@ -33,6 +33,8 @@
 #include <utils/Errors.h>  // for status_t
 #include <utils/String8.h>
 
+#define CARBON_ACOUSTICS
+
 namespace android {
 
 enum {
@@ -45,6 +47,9 @@ enum {
     PULL_BATTERY_DATA,
     LISTEN_FOR_REMOTE_DISPLAY,
     GET_CODEC_LIST,
+#ifdef CARBON_ACOUSTICS
+    GET_ACOUSTICS_DATA,
+#endif
 };
 
 class BpMediaPlayerService: public BpInterface<IMediaPlayerService>
@@ -129,6 +134,31 @@ public:
         remote()->transact(GET_CODEC_LIST, data, &reply);
         return interface_cast<IMediaCodecList>(reply.readStrongBinder());
     }
+
+#ifdef CARBON_ACOUSTICS
+    virtual status_t getAcousticsData(int *size, int *activeClientPids, int *activeClientSessions, int *activeClientStreamTypes) {
+
+        ALOGV("BpMediaPlayerService::getAcousticsData");
+
+        if (size == NULL || *size == 0 || activeClientPids == NULL || activeClientSessions == NULL || activeClientStreamTypes == NULL) {
+            ALOGV("BpMediaPlayerService::getAcousticsData BAD_VALUE");
+            return BAD_VALUE;
+        }
+        Parcel data, reply;
+        data.writeInterfaceToken(IMediaPlayerService::getInterfaceDescriptor());
+        data.writeInt32(*size);
+        status_t status = remote()->transact(GET_ACOUSTICS_DATA, data, &reply);
+        if (status == NO_ERROR) {
+            if ((status = (status_t)reply.readInt32()) == NO_ERROR) {
+                *size = uint32_t(reply.readInt32());
+                reply.read(activeClientPids, *size * sizeof(int));
+                reply.read(activeClientSessions, *size * sizeof(int));
+                reply.read(activeClientStreamTypes, *size * sizeof(int));
+            }
+        }
+        return status;
+    }
+#endif
 };
 
 IMPLEMENT_META_INTERFACE(MediaPlayerService, "android.media.IMediaPlayerService");
@@ -205,6 +235,33 @@ status_t BnMediaPlayerService::onTransact(
             reply->writeStrongBinder(IInterface::asBinder(mcl));
             return NO_ERROR;
         } break;
+#ifdef CARBON_ACOUSTICS
+        case GET_ACOUSTICS_DATA: {
+
+            ALOGV("BnMediaPlayerService::GET_ACOUSTICS_DATA");
+
+            CHECK_INTERFACE(IMediaPlayerService, data, reply);
+            int32_t size = data.readInt32();
+
+            int *pids = (int*)calloc(size, sizeof(int));
+            int *sessions = (int*)calloc(size, sizeof(int));
+            int *streamtypes = (int*)calloc(size, sizeof(int));
+
+            status_t status = getAcousticsData(&size, pids, sessions, streamtypes);
+
+            reply->writeInt32(status);
+            if (status == NO_ERROR) {
+                reply->writeInt32(size);
+                reply->write(pids, size * sizeof(int));
+                reply->write(sessions, size * sizeof(int));
+                reply->write(streamtypes, size * sizeof(int));
+            }
+            free(pids);
+            free(sessions);
+            free(streamtypes);
+            return NO_ERROR;
+        } break;
+#endif
         default:
             return BBinder::onTransact(code, data, reply, flags);
     }

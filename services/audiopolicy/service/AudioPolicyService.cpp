@@ -16,6 +16,7 @@
 
 #define LOG_TAG "AudioPolicyService"
 //#define LOG_NDEBUG 0
+#define CARBON_ACOUSTICS
 
 #include "Configuration.h"
 #undef __STRICT_ANSI__
@@ -79,6 +80,9 @@ void AudioPolicyService::onFirstRef()
         Mutex::Autolock _l(mLock);
         mAudioPolicyEffects = audioPolicyEffects;
     }
+#ifdef WAVES_PROCESSING
+    mAcousticsContextManager = new AcousticsContextManager(mAudioPolicyManager);
+#endif
 }
 
 AudioPolicyService::~AudioPolicyService()
@@ -1089,6 +1093,444 @@ int AudioPolicyService::setVoiceVolume(float volume, int delayMs)
 {
     return (int)mAudioCommandThread->voiceVolumeCommand(volume, delayMs);
 }
+
+#ifdef CARBON_ACOUSTICS
+static const int s_caCreatedByAcousticsIO[] = {13};
+static const unsigned int s_ciNumElementsCreatedByAcousticsIO = sizeof(s_caCreatedByAcousticsIO) / sizeof(int);
+static const effect_uuid_t s_cAcousticsEffectUuid = { 0xae12da60, 0x99ac, 0x11df, 0xb456, { 0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b } };
+static const int EFFECT_ID_INVALID = -1;
+
+AudioPolicyService::AcousticsContextManager::AcousticsContextManager(AudioPolicyInterface *pAudioPolicyManager)
+: m_bEnabled(false),
+  m_nMasterEffectId(EFFECT_ID_INVALID),
+  mAudioPolicyManager(pAudioPolicyManager)
+{
+    ALOGV("AcousticsContextManager created");
+}
+
+AudioPolicyService::AcousticsContextManager::~AcousticsContextManager()
+{
+    for (size_t i = 0; i < m_vIdToAcousticsContext.size() ; i++)
+    {
+        m_vIdToAcousticsContext.removeItemsAt(i);
+    }
+
+    ALOGV("AcousticsContextManager destroyed");
+}
+
+bool AudioPolicyService::AcousticsContextManager::isAcousticsEffect(const effect_descriptor_t *desc)
+{
+    ALOGV("AcousticsContextManager::isAcousticsEffect returning %s", (memcmp(&(desc->uuid), &s_cAcousticsEffectUuid, sizeof(effect_uuid_t)) == 0)?"true":"false");
+    return (memcmp(&(desc->uuid), &s_cAcousticsEffectUuid, sizeof(effect_uuid_t)) == 0);
+}
+
+bool AudioPolicyService::AcousticsContextManager::isMasterIo(const audio_io_handle_t io)
+{
+    ALOGV("AcousticsContextManager::isMasterIo %d", io);
+    bool bIsMasterIo = false;
+    for (unsigned int ii = 0; ii < s_ciNumElementsCreatedByAcousticsIO && !bIsMasterIo; ++ii)
+    {
+        bIsMasterIo = (s_caCreatedByAcousticsIO[ii] == io);
+    }
+    return bIsMasterIo;
+}
+
+bool AudioPolicyService::AcousticsContextManager::isAcousticsEffect(const int id) const
+{
+    ALOGV("AcousticsContextManager::isAcousticsEffect %d", id);
+    Mutex::Autolock _l(mLock);
+    ALOGV("AcousticsContextManager::isAcousticsEffect %d, lock acquired", id);
+//      ALOGV("AcousticsContextManager::isAcousticsEffect returning %s", (m_vIdToAcousticsContext.indexOfKey(id) >= 0)?"true":"false");
+    return (m_vIdToAcousticsContext.indexOfKey(id) >= 0);
+}
+
+sp<AudioPolicyService::AcousticsContext> AudioPolicyService::AcousticsContextManager::getEffect(const int id) const
+{
+    ALOGV("AcousticsContextManager::getEffect %d", id);
+    sp<AcousticsContext> pAcousticsContext;
+
+    int nIndex = m_vIdToAcousticsContext.indexOfKey(id);
+    if (nIndex >= 0)
+    {
+        pAcousticsContext = m_vIdToAcousticsContext.valueAt(nIndex);
+    }
+
+    return pAcousticsContext;
+}
+
+sp<AudioPolicyService::AcousticsContext> AudioPolicyService::AcousticsContextManager::getEffectOnIo(const audio_io_handle_t io) const
+{
+    ALOGV("AcousticsContextManager::getEffectOnIo %d", io);
+    bool bFound = false;
+    sp<AcousticsContext> pAcousticsContext;
+
+    for (size_t i = 0 ; i < m_vIdToAcousticsContext.size() ; i++)
+    {
+        pAcousticsContext = m_vIdToAcousticsContext.valueAt(i);
+        if (pAcousticsContext != 0 && pAcousticsContext->ioHandle() == io)
+        {
+            bFound = true;
+            break;
+        }
+    }
+
+    if (!bFound)
+    {
+        pAcousticsContext = 0;
+    }
+
+    return pAcousticsContext;
+}
+
+sp<AudioPolicyService::AcousticsContext> AudioPolicyService::AcousticsContextManager::getMasterEffect() const
+{
+    ALOGV("AcousticsContextManager::getMasterEffect");
+    sp<AcousticsContext> pMasterAcousticsContext = NULL;
+
+    int nIndex = m_vIdToAcousticsContext.indexOfKey(getMasterEffectId());
+    if (nIndex >= 0)
+    {
+        pMasterAcousticsContext = m_vIdToAcousticsContext.valueAt(nIndex);
+    }
+
+    return pMasterAcousticsContext;
+}
+
+void AudioPolicyService::AcousticsContextManager::setEffectEnabled(bool bEnabled)
+{
+    ALOGV("AcousticsContextManager::setEffectEnabled %d", bEnabled);
+    Mutex::Autolock _l(mLock);
+    ALOGV("AcousticsContextManager::setEffectEnabled %d, lock acquired", bEnabled);
+    m_bEnabled = bEnabled;
+
+    sp<AcousticsContext> pAcousticsContext = getEffect(getMasterEffectId());
+    if (pAcousticsContext != 0)
+    {
+        mLock.unlock();
+        pAcousticsContext->setEnabled(bEnabled);
+        mLock.lock();
+    }
+
+    syncSlaveEffectsEnableStateWithMasterEffect();
+
+    dump();
+}
+
+void AudioPolicyService::AcousticsContextManager::registerMasterEffect(
+                    const effect_descriptor_t *desc,
+                    const audio_io_handle_t io,
+                    const int id)
+{
+    ALOGV("AcousticsContextManager::registerMasterEffect io %d id %d", io, id);
+    Mutex::Autolock _l(mLock);
+    int nIndex = m_vIdToAcousticsContext.indexOfKey(id);
+
+    if (nIndex < 0)     // not registered yet
+    {
+        sp<AcousticsContext> pAcousticsContext = new AcousticsContext(*desc, io, NULL, id, false, true);
+        m_vIdToAcousticsContext.add(id, pAcousticsContext);
+        m_nMasterEffectId = id;
+
+        ALOGV("AcousticsContextManager::registerMasterEffect id %d Registered", m_nMasterEffectId);
+    }
+
+    // No need to set enable to slave effects here as we are expecting setEffectEnabled right after this call.
+    //syncSlaveEffectsEnableStateWithMasterEffect();
+
+    dump();
+}
+
+void AudioPolicyService::AcousticsContextManager::registerSlaveEffect(
+                    const audio_io_handle_t io,
+                    sp<AudioEffect> audio_effect)
+{
+    ALOGV("AcousticsContextManager::registerSlaveEffect io %d effect %p", io, audio_effect.get());
+    if (audio_effect != NULL)
+    {
+        int id = audio_effect->id();
+        effect_descriptor_t desc = audio_effect->descriptor();
+
+        int nIndex = m_vIdToAcousticsContext.indexOfKey(id);
+
+        if (nIndex < 0) // not registered yet, register here
+        {
+            ALOGV("AcousticsContextManager::registerSlaveEffect id %d Registered %p", id, audio_effect.get());
+            m_vIdToAcousticsContext.add(id, new AcousticsContext(desc, io, audio_effect, id, false, false));
+            syncSlaveEffectsEnableStateWithMasterEffect();
+        }
+        else // already registered - check if effect has changed.
+        {
+            sp<AcousticsContext> pAcousticsContext = m_vIdToAcousticsContext.valueAt(nIndex);
+            if (audio_effect != pAcousticsContext->audioEffect())   // effect has changed?!
+            {
+                // something's wrong. this shouldn't happen.
+                ALOGV("AcousticsContextManager::registerSlaveEffect id %d - duplicated registration! something's wrong!", id);
+                ALOGV("AcousticsContextManager::registerSlaveEffect id %d Registered %p", id, audio_effect.get());
+                m_vIdToAcousticsContext.replaceValueAt(id, new AcousticsContext(desc, io, audio_effect, id, false, false));
+                mLock.unlock();
+                pAcousticsContext = 0;
+                mLock.lock();
+                syncSlaveEffectsEnableStateWithMasterEffect();
+            }
+        }
+    }
+    else
+    {
+        ALOGV("AcousticsContextManager::registerSlaveEffect - no valid effect!");
+    }
+
+    dump();
+}
+
+void AudioPolicyService::AcousticsContextManager::unregisterEffect(const int id)
+{
+    ALOGV("AcousticsContextManager::unregisterEffect %d", id);
+    Mutex::Autolock _l(mLock);
+    ALOGV("AcousticsContextManager::unregisterEffect %d, lock acuired", id);
+
+    bool bIsMaster = false;
+    sp<AcousticsContext> pAcousticsContext = getEffect(id);
+
+    if (pAcousticsContext != 0)
+    {
+        bIsMaster = pAcousticsContext->isMasterIo();
+    }
+
+    m_vIdToAcousticsContext.removeItem(id);
+    mLock.unlock();
+    pAcousticsContext = 0;
+    mLock.lock();
+
+    if (bIsMaster)
+    {
+        // Master effect is removed, so this function will set all slaves effect to disable
+        syncSlaveEffectsEnableStateWithMasterEffect();
+    }
+
+    dump();
+}
+
+void AudioPolicyService::AcousticsContextManager::unregisterEffectOnIo(const audio_io_handle_t io)
+{
+    ALOGV("AcousticsContextManager::unregisterEffectOnIo %d", io);
+    Mutex::Autolock _l(mLock);
+    ALOGV("AcousticsContextManager::unregisterEffect on io %d, lock acquired", io);
+    bool bIsMaster = false;
+    sp<AcousticsContext> pAcousticsContext = getEffectOnIo(io);
+
+    if (pAcousticsContext != 0)
+    {
+        int id = pAcousticsContext->id();
+
+        if (id != EFFECT_ID_INVALID)
+        {
+            ALOGV("AcousticsContextManager::unregisterEffect on io %d - found id %d", io, id);
+            m_vIdToAcousticsContext.removeItem(id);
+        }
+        bIsMaster = pAcousticsContext->isMasterIo();
+
+        mLock.unlock();
+        pAcousticsContext = 0;
+        mLock.lock();
+    }
+
+    if (bIsMaster)
+    {
+        // Master effect is removed, so this function will set all slaves effect to disable
+        syncSlaveEffectsEnableStateWithMasterEffect();
+    }
+
+    dump();
+}
+
+bool AudioPolicyService::AcousticsContextManager::shouldCreateEffectOnIo(const audio_io_handle_t io, const audio_output_flags_t flag) const
+{
+        ALOGV("AcousticsContextManager::shouldCreateEffectOnIo %d %x", io, flag);
+    Mutex::Autolock _l(mLock);
+    ALOGV("AcousticsContextManager::shouldCreateEffectOnIo %d %x, lock acquired", io, flag);
+    bool bShouldCreateEffectOnIo = false;
+
+    if ((flag & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0 &&
+        (flag & AUDIO_OUTPUT_FLAG_DIRECT) == 0)
+    {
+        if (!isMasterIo(io) && io > 0)
+        {
+            bool bAlreadyRegistered = false;
+
+            for (size_t i = 0 ; i < m_vIdToAcousticsContext.size() && !bAlreadyRegistered ; i++)
+            {
+                if (m_vIdToAcousticsContext.valueAt(i)->ioHandle() == io)
+                {
+                    bAlreadyRegistered = true;
+                }
+            }
+
+            if (bAlreadyRegistered)
+            {
+                ALOGV("AcousticsContextManager::shouldCreateEffectOnIo already exist on IO: %d", io);
+            }
+            else
+            {
+                ALOGV("AcousticsContextManager::shouldCreateEffectOnIo should create on IO: %d", io);
+                bShouldCreateEffectOnIo = true;
+            }
+        }
+        else
+        {
+            ALOGV("AcousticsContextManager::shouldCreateEffectOnIo: io %d reserved for application, not creating.", io);
+        }
+    }
+    else
+    {
+        ALOGV("AcousticsContextManager::shouldCreateEffectOnIo: unsupported output flag, not creating.");
+    }
+
+    return bShouldCreateEffectOnIo;
+}
+
+status_t AudioPolicyService::AcousticsContextManager::createEffectOnIo(const audio_io_handle_t io)
+{
+    ALOGV("AcousticsContextManager::createEffectOnIo %d", io);
+    sp<AudioEffect> pAcousticsEffect = new AudioEffect(NULL, String16(""), (effect_uuid_t*)&s_cAcousticsEffectUuid, 0, 0, 0, AUDIO_SESSION_OUTPUT_MIX, io);
+
+    status_t status = pAcousticsEffect -> initCheck();
+
+    if (NO_ERROR == status)
+    {
+    ALOGV("AcousticsContextManager::createEffectOnIo %d, before lock", io);
+    Mutex::Autolock _l(mLock);
+    ALOGV("AcousticsContextManager::createEffectOnIo %d, after lock", io);
+    registerSlaveEffect(io, pAcousticsEffect);
+    syncSlaveEffectsEnableStateWithMasterEffect();
+
+    ALOGV("AcousticsContextManager::createEffectOnIo: Effect %p created successfully on io %d", pAcousticsEffect.get(), io);
+
+        dump();
+    }
+    else
+    {
+        ALOGV("AcousticsContextManager::createEffectOnIo: Effect failed to create, error: %d", status);
+    }
+    return status;
+}
+
+
+bool AudioPolicyService::AcousticsContextManager::isMasterEffect(const int id) const
+{
+    ALOGV("AcousticsContextManager::isMasterEffect %d", id);
+    Mutex::Autolock _l(mLock);
+    ALOGV("AcousticsContextManager::isMasterEffect %d, lock acquired", id);
+    bool bIsMasterEffect = false;
+
+    sp<AcousticsContext> pAcousticsContext = getEffect(id);
+    if (pAcousticsContext != 0)
+    {
+        bIsMasterEffect = (pAcousticsContext->isMasterIo());
+    }
+//      ALOGV("AcousticsContextManager::IsMasterEffect returning %s", bIsMasterEffect?"true":"false");
+    return bIsMasterEffect;
+}
+
+status_t AudioPolicyService::AcousticsContextManager::syncSlaveEffectsEnableStateWithMasterEffect()
+{
+    ALOGV("AcousticsContextManager::syncSlaveEffectsEnableStateWithMasterEffect");
+
+    bool bIsMasterEffectEnabled = isMasterEffectEnabled();
+
+    for (size_t i = 0; i < m_vIdToAcousticsContext.size() ; i++)
+    {
+        sp<AcousticsContext> pAcousticsContext = m_vIdToAcousticsContext.valueAt(i);
+
+        if (!pAcousticsContext->isMasterIo())       //slave
+        {
+            ALOGV("AcousticsContextManager::syncSlaveEffectsEnableStateWithMasterEffect Slave Effect id=%d %s", pAcousticsContext->id(), bIsMasterEffectEnabled?"Enabled":"Disabled");
+            mLock.unlock();
+            pAcousticsContext->setEnabled(bIsMasterEffectEnabled);
+            mLock.lock();
+        }
+    }
+    return NO_ERROR;
+}
+
+bool AudioPolicyService::AcousticsContextManager::isMasterEffectEnabled() const
+{
+    ALOGV("AcousticsContextManager::isMasterEffectEnabled");
+
+    bool isMasterEffectEnabled = false;
+    sp<AcousticsContext> pMasterAcousticsContext = getMasterEffect();
+
+    if (pMasterAcousticsContext != 0)
+    {
+        isMasterEffectEnabled = pMasterAcousticsContext->isEnabled();
+    }
+
+    return isMasterEffectEnabled;
+}
+
+void AudioPolicyService::AcousticsContextManager::dump() const
+{
+    ALOGV("AcousticsContextManager ===== Total Entries = %d", m_vIdToAcousticsContext.size());
+
+    for (size_t i = 0 ; i < m_vIdToAcousticsContext.size() ; i++)
+    {
+        sp<AcousticsContext> pAcousticsContext = m_vIdToAcousticsContext.valueAt(i);
+        if (pAcousticsContext != 0) { pAcousticsContext->dump(i); }
+    }
+}
+
+AudioPolicyService::AcousticsContext::AcousticsContext(
+        const effect_descriptor_t desc,
+        const audio_io_handle_t io,
+        sp<AudioEffect> audio_effect,
+        const int id,
+        const bool enabled,
+        const bool isMasterIo)
+: mDesc(desc),
+  mIo(io),
+  mAudioEffect(audio_effect),
+  mId(id),
+  mEnabled(enabled),
+  mIsMasterIo(isMasterIo)
+{
+    ALOGV("AcousticsContext created %p", audio_effect.get());
+};
+
+AudioPolicyService::AcousticsContext::~AcousticsContext()
+{
+    ALOGV("AcousticsContext destroyed");
+};
+
+status_t AudioPolicyService::AcousticsContext::setEnabled(const bool bEnabled)
+{
+    ALOGV("AcousticsContext setEnabled id %d %s", mId, bEnabled?"Enabled":"Disabled");
+
+    mEnabled = bEnabled;
+
+    if (mAudioEffect != NULL)
+    {
+        mAudioEffect->setEnabled(mEnabled);
+    }
+
+    return NO_ERROR;
+}
+
+void AudioPolicyService::AcousticsContext::dump(size_t index) const
+{
+    if (mIsMasterIo)
+    {
+        ALOGV("AcousticsContext[%d] Master Effect - %s", index, mEnabled?"Enabled":"Disabled");
+        ALOGV("AcousticsContext[%d] ID = %d", index, mId);
+        ALOGV("AcousticsContext[%d] ioHandle = %d", index, mIo);
+    }
+    else
+    {
+        ALOGV("AcousticsContext[%d] Slave Effect - %s", index, mEnabled?"Enabled":"Disabled");
+        ALOGV("AcousticsContext[%d] ID = %d", index, mId);
+        ALOGV("AcousticsContext[%d] ioHandle = %d", index, mIo);
+        ALOGV("AcousticsContext[%d] AudioEffect = %p", index, mAudioEffect.get());
+    }
+}
+#endif
 
 extern "C" {
 audio_module_handle_t aps_load_hw_module(void *service __unused,

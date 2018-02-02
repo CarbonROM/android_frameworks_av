@@ -19,6 +19,8 @@
     #error This header file should only be included from AudioFlinger.h
 #endif
 
+#define CARBON_ACOUSTICS
+
 // playback track
 class Track : public TrackBase, public VolumeProvider {
 public:
@@ -182,6 +184,10 @@ private:
     bool                mResumeToStopping; // track was paused in stopping state.
     bool                mFlushHwPending; // track requests for thread flush
     audio_output_flags_t mFlags;
+#ifdef CARBON_ACOUSTICS
+public:
+    int                 pid();
+#endif
 };  // end of Track
 
 

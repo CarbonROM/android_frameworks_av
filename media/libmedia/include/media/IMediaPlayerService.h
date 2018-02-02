@@ -17,6 +17,8 @@
 #ifndef ANDROID_IMEDIAPLAYERSERVICE_H
 #define ANDROID_IMEDIAPLAYERSERVICE_H
 
+#define CARBON_ACOUSTICS
+
 #include <utils/Errors.h>  // for status_t
 #include <utils/KeyedVector.h>
 #include <utils/RefBase.h>
@@ -86,6 +88,10 @@ public:
 
     virtual void addBatteryData(uint32_t params) = 0;
     virtual status_t pullBatteryData(Parcel* reply) = 0;
+#ifdef CARBON_ACOUSTICS
+    virtual status_t getAcousticsData(int *size, int *activeClientPids, int *activeClientSessions, int *activeClientStreamTypes) = 0;
+#endif //CARBON_ACOUSTICS
+
 };
 
 // ----------------------------------------------------------------------------

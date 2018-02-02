@@ -18,6 +18,11 @@
 
 #define LOG_TAG "AudioFlinger"
 //#define LOG_NDEBUG 0
+#define CARBON_ACOUSTICS
+
+#ifdef CARBON_ACOUSTICS
+const char* ACOUSTICS_FRAMEWORKS_AV_VERSION = "ACOUSTICS_FRAMEWORKS_AV_VERSION__1.24.7.0";
+#endif
 
 #include "Configuration.h"
 #include <dirent.h>
@@ -109,9 +114,14 @@ size_t AudioFlinger::mTeeSinkOutputFrames = kTeeSinkOutputFramesDefault;
 size_t AudioFlinger::mTeeSinkTrackFrames = kTeeSinkTrackFramesDefault;
 #endif
 
+#ifndef CARBON_ACOUSTICS
 // In order to avoid invalidating offloaded tracks each time a Visualizer is turned on and off
 // we define a minimum time during which a global effect is considered enabled.
 static const nsecs_t kMinGlobalEffectEnabletimeNs = seconds(7200);
+#else
+// The default 7200 seconds prevents from entering offload mode. Set a reasonable number here.
+static const nsecs_t kMinGlobalEffectEnabletimeNs = seconds(3);
+#endif
 
 Mutex gLock;
 wp<AudioFlinger> gAudioFlinger;
@@ -202,6 +212,11 @@ AudioFlinger::AudioFlinger()
         mTeeSinkTrackEnabled = true;
     }
 #endif
+
+#ifdef CARBON_ACOUSTICS
+    mAcousticsThread = new AcousticsThread(this);
+    mAcousticsThread->run("AcousticsThread");
+#endif
 }
 
 void AudioFlinger::onFirstRef()
@@ -244,6 +259,10 @@ AudioFlinger::~AudioFlinger()
         // no mHardwareLock needed, as there are no other references to this
         delete mAudioHwDevs.valueAt(i);
     }
+
+#ifdef CARBON_ACOUSTICS
+      mAcousticsThread->exit();
+#endif
 
     // Tell media.log service about any old writers that still need to be unregistered
     if (sMediaLogService != 0) {
@@ -522,6 +541,12 @@ status_t AudioFlinger::dump(int fd, const Vector<String16>& args)
             sp<DeviceHalInterface> dev = mAudioHwDevs.valueAt(i)->hwDevice();
             dev->dump(fd);
         }
+
+#ifdef CARBON_ACOUSTICS
+        write(fd, "\n", strlen("\n"));
+        write(fd, ACOUSTICS_FRAMEWORKS_AV_VERSION, strlen(ACOUSTICS_FRAMEWORKS_AV_VERSION));
+        write(fd, "\n\n", strlen("\n\n"));
+#endif
 
 #ifdef TEE_SINK
         // dump the serially shared record tee sink
@@ -1468,7 +1493,9 @@ sp<AudioFlinger::PlaybackThread> AudioFlinger::getEffectThread_l(audio_session_t
 
     for (size_t i = 0; i < mPlaybackThreads.size(); i++) {
         if (mPlaybackThreads.valueAt(i)->getEffect(sessionId, EffectId) != 0) {
+#ifndef CARBON_ACOUSTICS
             ALOG_ASSERT(thread == 0);
+#endif
             thread = mPlaybackThreads.valueAt(i);
         }
     }
@@ -2152,6 +2179,13 @@ status_t AudioFlinger::closeOutput_nonvirtual(audio_io_handle_t output)
         // from now on thread->mOutput is NULL
         delete out;
     }
+
+#ifdef CARBON_ACOUSTICS
+    {
+        // when thread exits, we check active pids again
+        mAcousticsThread->signal();
+    }
+#endif
     return NO_ERROR;
 }
 
@@ -2835,6 +2869,15 @@ status_t AudioFlinger::getEffectDescriptor(const effect_uuid_t *pUuid,
     }
 }
 
+#ifdef CARBON_ACOUSTICS
+static const effect_uuid_t s_cAcousticsEffectUuid = { 0xae12da60, 0x99ac, 0x11df, 0xb456, { 0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b } };
+
+static bool isAcousticsEffect(effect_descriptor_t desc)
+{
+    return (memcmp(&(desc.uuid), &s_cAcousticsEffectUuid, sizeof(effect_uuid_t)) == 0);
+}
+#endif
+
 
 sp<IEffect> AudioFlinger::createEffect(
         effect_descriptor_t *pDesc,
@@ -2870,7 +2913,12 @@ sp<IEffect> AudioFlinger::createEffect(
     }
 
     // check audio settings permission for global effects
+#ifndef CARBON_ACOUSTICS
     if (sessionId == AUDIO_SESSION_OUTPUT_MIX && !settingsAllowed()) {
+#else
+    // Allow Acoustics to create on AUDIO_SESSION_OUTPUT_MIX
+    if (sessionId == AUDIO_SESSION_OUTPUT_MIX && !isAcousticsEffect(*pDesc) && !settingsAllowed()) {
+#endif
         lStatus = PERMISSION_DENIED;
         goto Exit;
     }
@@ -3120,6 +3168,24 @@ status_t AudioFlinger::moveEffectChain_l(audio_session_t sessionId,
     status_t status = NO_ERROR;
     while (effect != 0) {
         srcThread->removeEffect_l(effect);
+#ifdef CARBON_ACOUSTICS
+        if (AUDIO_SESSION_OUTPUT_MIX == sessionId &&
+            isAcousticsEffect(effect -> desc()))
+        {
+            ALOGV("We need to re add Acoustics effect if we are on session 0 and Acoustics effect was on this session");
+            srcThread -> addEffect_l(effect);
+
+            // removeEffect_l() has stopped the effect if it was active so it must be restarted
+            if (effect->state() == EffectModule::ACTIVE ||
+                effect->state() == EffectModule::STOPPING) {
+                effect->start();
+            }
+
+            effect = chain->getEffectFromId_l(0);
+
+            continue;
+        }
+#endif
         removed.add(effect);
         status = dstThread->addEffect_l(effect);
         if (status != NO_ERROR) {
@@ -3187,6 +3253,20 @@ bool AudioFlinger::isNonOffloadableGlobalEffectEnabled_l()
     }
     return false;
 }
+
+#ifdef CARBON_ACOUSTICS
+void AudioFlinger::onNonOffloadableAcousticsGlobalEffectEnable()
+{
+    mGlobalEffectEnableTime = systemTime();
+
+    for (size_t i = 0; i < mPlaybackThreads.size(); i++) {
+        sp<PlaybackThread> t = mPlaybackThreads.valueAt(i);
+        if (t->mType == ThreadBase::OFFLOAD) {
+            t->invalidateTracks(AUDIO_STREAM_MUSIC);
+        }
+    }
+}
+#endif
 
 void AudioFlinger::onNonOffloadableGlobalEffectEnable()
 {

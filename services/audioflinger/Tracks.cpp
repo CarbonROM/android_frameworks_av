@@ -18,6 +18,7 @@
 
 #define LOG_TAG "AudioFlinger"
 //#define LOG_NDEBUG 0
+#define CARBON_ACOUSTICS
 
 #include "Configuration.h"
 #include <linux/futex.h>
@@ -1209,6 +1210,13 @@ void AudioFlinger::PlaybackThread::Track::resumeAck() {
         mResumeToStopping = false;
     }
 }
+
+#ifdef CARBON_ACOUSTICS
+int AudioFlinger::PlaybackThread::Track::pid()
+{
+    return (mClient == 0) ? getpid_cached : mClient->pid();
+}
+#endif
 
 //To be called with thread lock held
 void AudioFlinger::PlaybackThread::Track::updateTrackFrameInfo(

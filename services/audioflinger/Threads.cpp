@@ -19,6 +19,7 @@
 #define LOG_TAG "AudioFlinger"
 //#define LOG_NDEBUG 0
 #define ATRACE_TAG ATRACE_TAG_AUDIO
+#define CARBON_ACOUSTICS
 
 #include "Configuration.h"
 #include <math.h>
@@ -425,6 +426,238 @@ void CpuStats::sample(const String8 &title
 #endif
 };
 
+
+#ifdef CARBON_ACOUSTICS
+AudioFlinger::AcousticsThread::AcousticsThread(const sp<AudioFlinger>& audioFlinger)
+    :   Thread(false /*canCallJava*/),
+        mAudioFlinger(audioFlinger),
+        mNeedToCheck(false)
+{
+    static const effect_uuid_t s_cAcousticsEffectUuid = { 0xae12da60, 0x99ac, 0x11df, 0xb456, { 0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b } };
+    memcpy(&mDescriptor.uuid, &s_cAcousticsEffectUuid, sizeof(effect_uuid_t));
+}
+
+void AudioFlinger::AcousticsThread::signal()
+{
+    ALOGV("AcousticsThread::signal()");
+
+    mLock.lock();
+    mNeedToCheck = true;
+    mWaitWorkCV.signal();
+    mLock.unlock();
+}
+
+bool AudioFlinger::AcousticsThread::threadLoop()
+{
+    ALOGV("AcousticsThread::threadLoop()");
+    if (exitPending()) {
+        return false;
+    }
+
+    mLock.lock();
+    if (!mNeedToCheck) {
+        mWaitWorkCV.wait(mLock);
+    }
+    mNeedToCheck = false;
+    mLock.unlock();
+
+    if (exitPending()) {
+        return false;
+    }
+
+    activeTracksChanged();
+    return true;
+}
+
+void AudioFlinger::AcousticsThread::exit()
+{
+    requestExit();
+    signal();
+}
+
+void AudioFlinger::AcousticsThread::activeTracksChanged()
+{
+    ALOGV("AcousticsThread::activeTracksChanged()");
+
+    Vector<AcousticsDataType> vAcousticsData;
+    if (NO_ERROR != getAcousticsData(vAcousticsData))
+    {
+        ALOGE("getAcousticsData() failed");
+    }
+
+    sp<EffectModule> effectModule = getMasterEffect();
+
+    if (NO_ERROR != sendData(effectModule, vAcousticsData))
+    {
+        ALOGV("sendData() failed.");
+    }
+}
+
+status_t AudioFlinger::AcousticsThread::getAcousticsData(Vector<AcousticsDataType> &vAcousticsData) {
+    ALOGV("getAcousticsData() entry");
+
+    AutoMutex _l(mAudioFlinger->mLock);
+
+    KeyedVector<int, int> kvSessionToIo;
+
+    bool bNeedUpdateFromMediaPlayerService = false;
+
+    // Get data from Audioflinger
+    for (size_t i = 0 ; i < mAudioFlinger->mPlaybackThreads.size() ; i++)
+    {
+        const sp<PlaybackThread> playbackThread = mAudioFlinger->mPlaybackThreads.valueAt(i);
+        {
+            AutoMutex _l(playbackThread->mLock);
+            size_t numactive = playbackThread->mActiveTracks.size();
+            for (size_t j = 0; j < numactive ; j++)
+            {
+                AcousticsDataType AcousticsData{};
+
+                if (playbackThread->getAcousticsData_l(j, AcousticsData))
+                {
+                    if (getpid_cached != (int)AcousticsData.m_n32Pid)
+                    {
+                        vAcousticsData.push(AcousticsData);
+                        ALOGV("getAcousticsData() from audioflinger AcousticsData[%u] = (%d, %d, %d, %d)", (unsigned int)vAcousticsData.size()-1, AcousticsData.m_n32Io, AcousticsData.m_n32Pid, AcousticsData.m_n32Session, AcousticsData.m_n32StreamType);
+                    }
+                    else
+                    {
+                        kvSessionToIo.add(AcousticsData.m_n32Session, AcousticsData.m_n32Io);
+                        bNeedUpdateFromMediaPlayerService = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // For clients of mediaplayer, get data from mediaplayer
+    if (bNeedUpdateFromMediaPlayerService)
+    {
+        const int c_nArraySize = 32;
+        int nArraySize = c_nArraySize;
+        int aActiveClientPids[c_nArraySize] = {0};
+        int aActiveClientSessions[c_nArraySize] = {0};
+        int aActiveClientStreamTypes[c_nArraySize] = {0};
+
+        if (getAcousticsDataFromMediaPlayerService(&nArraySize, aActiveClientPids, aActiveClientSessions, aActiveClientStreamTypes) == NO_ERROR)
+        {
+            for (int ii = 0 ; ii < nArraySize ; ii++)
+            {
+                AcousticsDataType AcousticsData{};
+
+                ssize_t index = kvSessionToIo.indexOfKey(aActiveClientSessions[ii]);
+                if (index >= 0)
+                {
+                    AcousticsData.m_n32Io = kvSessionToIo.valueAt(index);
+                    AcousticsData.m_n32Pid = aActiveClientPids[ii];
+                    AcousticsData.m_n32Session = aActiveClientSessions[ii];
+                    AcousticsData.m_n32StreamType = aActiveClientStreamTypes[ii];
+                    vAcousticsData.push(AcousticsData);
+                    ALOGV("getAcousticsData() from mediaplayer AcousticsData[%u] = (%d, %d, %d, %d)", (unsigned int)vAcousticsData.size()-1, AcousticsData.m_n32Io, AcousticsData.m_n32Pid, AcousticsData.m_n32Session, AcousticsData.m_n32StreamType);
+                }
+                else
+                {
+                    ALOGW("getAcousticsData() Io not found for session %d", aActiveClientSessions[ii]);
+                }
+            }
+        }
+    }
+
+    ALOGV("getAcousticsData() end got size %zu", vAcousticsData.size());
+
+    return NO_ERROR;
+}
+
+const sp<IMediaPlayerService>& AudioFlinger::AcousticsThread::getMediaPlayerService()
+{
+    if (sMediaPlayerService == NULL) {
+        sp<IServiceManager> sm = defaultServiceManager();
+        sp<IBinder> binder;
+        do {
+            binder = sm->getService(String16("media.player"));
+            if (binder != NULL) {
+                break;
+            }
+            usleep(500000); // 0.5 s
+        } while (true);
+
+        sMediaPlayerService = interface_cast<IMediaPlayerService>(binder);
+    }
+    ALOGV(sMediaPlayerService == NULL ? "no media player service!?" : "get media player service");
+    return sMediaPlayerService;
+}
+
+status_t AudioFlinger::AcousticsThread::getAcousticsDataFromMediaPlayerService(int *size, int *aActiveClientPids, int *aActiveClientSessions, int *aActiveClientStreamTypes)
+{
+    const sp<IMediaPlayerService>& service = getMediaPlayerService();
+
+    if (NO_ERROR == service->getAcousticsData(size, aActiveClientPids, aActiveClientSessions, aActiveClientStreamTypes))
+    {
+        ALOGV("getAcousticsDataFromMediaPlayerService() finished, size = %d", *size);
+        return NO_ERROR;
+    }
+    else
+    {
+        ALOGE("MediaPlayerService::getAcousticsData() failed");
+        return BAD_VALUE;
+    }
+}
+
+sp<AudioFlinger::EffectModule> AudioFlinger::AcousticsThread::getMasterEffect()
+{
+    AutoMutex _l(mAudioFlinger->mLock);
+    sp<PlaybackThread> playbackThread = mAudioFlinger->primaryPlaybackThread_l();
+
+    if (playbackThread != NULL)
+    {
+        AutoMutex _l(playbackThread->mLock);
+
+        Vector< sp<EffectChain> > effectChains = playbackThread->getEffectChains_l();
+
+        sp<EffectModule> effectModule;
+        for (size_t ii = 0; ii < effectChains.size() && effectModule == NULL; ii++) {
+            effectModule = effectChains[ii]->getEffectFromDesc_l(&mDescriptor);
+        }
+        return effectModule;
+    }
+    else
+    {
+        return NULL;
+    }
+}
+
+status_t AudioFlinger::AcousticsThread::sendData(sp<EffectModule> effectModule, Vector<AcousticsDataType> vAcousticsData)
+{
+    status_t status = NO_ERROR;
+
+    if (effectModule != NULL) {
+        size_t AcousticsDataCount = vAcousticsData.size();
+        size_t command_buffer_size = sizeof(SetAcousticsDataCommandDataType) + AcousticsDataCount * sizeof(AcousticsDataType);
+        Vector<char> vCommandBuffer;
+        vCommandBuffer.resize(command_buffer_size);
+
+        SetAcousticsDataCommandDataType *pSetAcousticsDataCommandData = (SetAcousticsDataCommandDataType *) vCommandBuffer.editArray();
+        pSetAcousticsDataCommandData->m_n32Version = (uint32_t)ACOUSTICS_DATA_VERSION;
+        pSetAcousticsDataCommandData->m_n32Count = (uint32_t)AcousticsDataCount;
+        memcpy(pSetAcousticsDataCommandData->m_acData, vAcousticsData.array(), AcousticsDataCount * sizeof(AcousticsDataType));
+
+        uint32_t unuse = 0;
+        effectModule->command((effect_command_e)SL_CMD_SET_ACOUSTICS_DATA,
+               command_buffer_size,
+               (void *)vCommandBuffer.array(),
+               &unuse,
+               NULL);
+    }
+    else
+    {
+        ALOGW("AcousticsThread::sendData() effect not exist");
+        status = BAD_VALUE;
+    }
+
+        return status;
+}
+#endif
+
 // ----------------------------------------------------------------------------
 //      ThreadBase
 // ----------------------------------------------------------------------------
@@ -510,6 +743,9 @@ AudioFlinger::ThreadBase::ThreadBase(const sp<AudioFlinger>& audioFlinger, audio
         mDeathRecipient(new PMDeathRecipient(this)),
         mSystemReady(systemReady),
         mSignalPending(false)
+#ifdef CARBON_ACOUSTICS
+        ,mbLastBufferProcessed(true)
+#endif
 {
     memset(&mPatch, 0, sizeof(struct audio_patch));
 }
@@ -1340,6 +1576,11 @@ sp<AudioFlinger::EffectHandle> AudioFlinger::ThreadBase::createEffect_l(
         if (enabled != NULL) {
             *enabled = (int)effect->isEnabled();
         }
+#ifdef CARBON_ACOUSTICS
+        {
+            mAudioFlinger->mAcousticsThread->signal();
+        }
+#endif
     }
 
 Exit:
@@ -1869,6 +2110,9 @@ sp<AudioFlinger::PlaybackThread::Track> AudioFlinger::PlaybackThread::createTrac
     // client expresses a preference for FAST, but we get the final say
     if (*flags & AUDIO_OUTPUT_FLAG_FAST) {
       if (
+#ifdef CARBON_ACOUSTICS
+            !property_get_bool("acoustics.disable_fast_track", false /* default_value */) &&
+#endif
             // PCM data
             audio_is_linear_pcm(format) &&
             // TODO: extract as a data library function that checks that a computationally
@@ -2181,6 +2425,20 @@ status_t AudioFlinger::PlaybackThread::addTrack_l(const sp<Track>& track)
         track->mResetDone = false;
         track->mPresentationCompleteFrames = 0;
         mActiveTracks.add(track);
+#ifdef CARBON_ACOUSTICS
+        {
+            bool bProcessByAcoustics = true;
+            if (mType == OFFLOAD) {
+                bProcessByAcoustics = false;
+            }
+            if (track->isFastTrack()) {
+                bProcessByAcoustics = false;
+            }
+            if (bProcessByAcoustics) {
+                mAudioFlinger->mAcousticsThread->signal();
+            }
+        }
+#endif
         sp<EffectChain> chain = getEffectChain_l(track->sessionId());
         if (chain != 0) {
             ALOGV("addTrack_l() starting track on chain %p for session %d", chain.get(),
@@ -2425,7 +2683,12 @@ void AudioFlinger::PlaybackThread::readOutputParameters_l()
     mThreadThrottle = property_get_bool("af.thread.throttle", true /* default_value */);
     mThreadThrottleTimeMs = 0;
     mThreadThrottleEndMs = 0;
+#ifdef CARBON_ACOUSTICS
+    uint32_t throttleRatio = property_get_int32("acoustics.throttleratio", 2 /* default_value */);
+    mHalfBufferMs = mNormalFrameCount * 1000 / (throttleRatio * mSampleRate);
+#else
     mHalfBufferMs = mNormalFrameCount * 1000 / (2 * mSampleRate);
+#endif
 
     // mSinkBuffer is the sink buffer.  Size is always multiple-of-16 frames.
     // Originally this was int16_t[] array, need to remove legacy implications.
@@ -2978,6 +3241,12 @@ bool AudioFlinger::PlaybackThread::threadLoop()
 
     while (!exitPending())
     {
+#ifdef CARBON_ACOUSTICS
+        uint32_t effectProcessTimeUs = 0;
+        // Create a copy of last used tracks. After prepareTracks_l the member will be updated.
+        SortedVector<wp<Track>> lastAcousticsMixerTracks = mAcousticsMixerTracks;
+#endif
+
         // Log merge requests are performed during AudioFlinger binder transactions, but
         // that does not cover audio playback. It's requested here for that reason.
         mAudioFlinger->requestLogMerge();
@@ -3214,9 +3483,121 @@ bool AudioFlinger::PlaybackThread::threadLoop()
 
             // only process effects if we're going to write
             if (mSleepTimeUs == 0 && mType != OFFLOAD) {
+#ifndef CARBON_ACOUSTICS
                 for (size_t i = 0; i < effectChains.size(); i ++) {
                     effectChains[i]->process_l();
                 }
+#else
+                if (!effectChains.empty()) {
+                    ATRACE_BEGIN("fx");
+                    nsecs_t effectProcessingTimeBeforeProcessingNs = systemTime();
+                    bool bTracksChanged = false;
+
+                    if (!mbLastBufferProcessed
+                        || lastAcousticsMixerTracks.size() != mAcousticsMixerTracks.size()) {
+                        bTracksChanged = true;
+                    } else {
+                        for (size_t i = 0 ; i < lastAcousticsMixerTracks.size() && !bTracksChanged ; i++) {
+                            if (mAcousticsMixerTracks.indexOf(lastAcousticsMixerTracks[i]) < 0) {
+                                bTracksChanged = true;
+                            }
+                        }
+                    }
+
+                    if (bTracksChanged || !mbLastBufferProcessed){
+                        static const effect_uuid_t s_cAcousticsEffectUuid = { 0xae12da60, 0x99ac, 0x11df, 0xb456, { 0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b } };
+                        #define SL_CMD_ACOUSTICS_SET_AF_TRACKS_INFO (0x20002)
+                        enum TracksInfoReason {
+                            TRACKS_INFO_REASON_TRACKS_CHANGED = 0,
+                            TRACKS_INFO_REASON_DISCONTINUOUS_BUFFER = 1,
+                        };
+                        typedef unsigned int track_info_reason_mask_t;
+                        const static track_info_reason_mask_t TRACKS_INFO_REASON_TRACKS_CHANGED_MASK = 1 << TRACKS_INFO_REASON_TRACKS_CHANGED;
+                        const static track_info_reason_mask_t TRACKS_INFO_REASON_DISCONTINUOUS_BUFFER_MASK = 1 << TRACKS_INFO_REASON_DISCONTINUOUS_BUFFER;
+
+                        #pragma pack(push, 4)
+                        typedef struct SetAfTracksInfoCommandData{
+                            uint32_t    m_n32Version;   // AcousticsTrackInfo version
+                            uint32_t    m_n32Reason;    // Reason of receiving this packet. Case from TracksInfoReason.
+                            uint32_t    m_n32Count;     // Numbers of AcousticsTrackInfo
+                            char        m_acData[0];    // Buffer of AcousticsTrackInfo
+                        } SetAfTracksInfoCommandDataType;
+
+                        typedef struct AcousticsTrackInfo_V1 {
+                            uint32_t    m_n32Id;
+                            uint32_t    m_n32Io;
+                            uint32_t    m_n32Session;
+                            uint32_t    m_n32StreamType;
+                            uint32_t    m_n32State;
+                        } AcousticsTrackInfoType_V1;
+                        #pragma pack(pop)
+// End of Acoustics defines
+                        track_info_reason_mask_t reasonMask = 0;
+                        size_t command_buffer_size = 0;
+                        size_t command_buffer_size_max = sizeof(SetAfTracksInfoCommandDataType) + mAcousticsMixerTracks.size() * sizeof(AcousticsTrackInfo_V1);
+                        Vector<char> vCommandBuffer;
+                        vCommandBuffer.resize(command_buffer_size_max);
+                        SetAfTracksInfoCommandDataType *pSetAfTracksInfoCommandData = (SetAfTracksInfoCommandDataType *)vCommandBuffer.editArray();
+
+                        if (!mbLastBufferProcessed){
+                            reasonMask |= TRACKS_INFO_REASON_DISCONTINUOUS_BUFFER_MASK;
+                        }
+
+                        if (bTracksChanged){
+                            reasonMask |= TRACKS_INFO_REASON_TRACKS_CHANGED_MASK;
+
+                            AcousticsTrackInfoType_V1* pTrackInfo = (AcousticsTrackInfoType_V1 *)pSetAfTracksInfoCommandData->m_acData;
+                            uint32_t nTrackInfoCount = 0;
+
+                            for (size_t ii=0 ; ii<mAcousticsMixerTracks.size() ; ii++) {
+                                sp<Track> track = mAcousticsMixerTracks[ii].promote();
+                                if (track != NULL) {
+                                    AcousticsTrackInfoType_V1 acousticsTrackInfo{};
+                                    acousticsTrackInfo.m_n32Id = track->mId;
+                                    acousticsTrackInfo.m_n32Io = id();
+                                    acousticsTrackInfo.m_n32Session = track->sessionId();
+                                    acousticsTrackInfo.m_n32StreamType = track->streamType();
+                                    acousticsTrackInfo.m_n32State = track->mState;
+
+                                    pTrackInfo[nTrackInfoCount++] = acousticsTrackInfo;
+                                }
+                            }
+
+                            pSetAfTracksInfoCommandData->m_n32Count = nTrackInfoCount;
+                            command_buffer_size = sizeof(SetAfTracksInfoCommandDataType) + nTrackInfoCount * sizeof(AcousticsTrackInfo_V1);
+                        }else{
+                            pSetAfTracksInfoCommandData->m_n32Count = 0;
+                            command_buffer_size = sizeof(SetAfTracksInfoCommandDataType);
+                        }
+                        pSetAfTracksInfoCommandData->m_n32Version = 1;
+                        pSetAfTracksInfoCommandData->m_n32Reason = reasonMask;
+
+                        sp<EffectModule> effectModule;
+                        effect_descriptor_t descriptor;
+                        memcpy(&descriptor.uuid, &s_cAcousticsEffectUuid, sizeof(effect_uuid_t));
+                        for (size_t ii = 0; ii < effectChains.size() && effectModule == NULL; ii++) {
+                            effectModule = effectChains[ii]->getEffectFromDesc_l(&descriptor);
+                            if (effectModule != NULL){
+                                uint32_t unuse = 0;
+                                effectModule->command((effect_command_e)SL_CMD_ACOUSTICS_SET_AF_TRACKS_INFO,
+                                       command_buffer_size,
+                                       (void *)vCommandBuffer.array(),
+                                       &unuse,
+                                       NULL);
+                            }
+                        }
+                    }
+                    for (size_t i = 0; i < effectChains.size(); i++) {
+                        effectChains[i]->process_l();
+                    }
+                    mbLastBufferProcessed = true;
+                    effectProcessTimeUs = (systemTime() - effectProcessingTimeBeforeProcessingNs)/1000;
+                    ATRACE_END();
+
+                } else {
+                    mbLastBufferProcessed = false;
+                }
+#endif
             }
         }
         // Process effect chains for offloaded thread even if no audio
@@ -3312,6 +3693,8 @@ bool AudioFlinger::PlaybackThread::threadLoop()
                                 (lastWriteFinished - previousLastWriteFinished) / 1000000;
                         const int32_t throttleMs = mHalfBufferMs - deltaMs;
                         if ((signed)mHalfBufferMs >= throttleMs && throttleMs > 0) {
+
+#ifndef CARBON_ACOUSTICS
                             usleep(throttleMs * 1000);
                             // notify of throttle start on verbose log
                             ALOGV_IF(mThreadThrottleEndMs == mThreadThrottleTimeMs,
@@ -3322,6 +3705,27 @@ bool AudioFlinger::PlaybackThread::threadLoop()
                             // Throttle must be attributed to the previous mixer loop's write time
                             // to allow back-to-back throttling.
                             lastWriteFinished += throttleMs * 1000000;
+#else
+                            uint32_t throttleUs = throttleMs * 1000;
+                            // If time was spent on effects, we should subtract it from the sleep time
+                            if (throttleUs >= effectProcessTimeUs) {
+                                throttleUs -= effectProcessTimeUs;
+
+                                ATRACE_BEGIN("throttle");
+                                usleep(throttleUs);
+                                ATRACE_END();
+                            }
+                            else {
+                                throttleUs = 0;
+                            }
+
+                            // notify of throttle start on verbose log
+                            ALOGV_IF(mThreadThrottleEndMs == mThreadThrottleTimeMs,
+                                    "mixer(%p) throttle begin:"
+                                    " ret(%zd) deltaMs(%d) requires sleep %d ms",
+                                    this, ret, deltaMs, throttleUs/1000);
+                            mThreadThrottleTimeMs += throttleUs/1000;
+#endif
                         } else {
                             uint32_t diff = mThreadThrottleTimeMs - mThreadThrottleEndMs;
                             if (diff > 0) {
@@ -3408,6 +3812,11 @@ void AudioFlinger::PlaybackThread::removeTracks_l(const Vector< sp<Track> >& tra
         for (size_t i=0 ; i<count ; i++) {
             const sp<Track>& track = tracksToRemove.itemAt(i);
             mActiveTracks.remove(track);
+#ifdef CARBON_ACOUSTICS
+            {
+                mAudioFlinger->mAcousticsThread->signal();
+            }
+#endif
             ALOGV("removeTracks_l removing track on session %d", track->sessionId());
             sp<EffectChain> chain = getEffectChain_l(track->sessionId());
             if (chain != 0) {
@@ -3582,6 +3991,33 @@ void AudioFlinger::PlaybackThread::getAudioPortConfig(struct audio_port_config *
     config->ext.mix.hw_module = mOutput->audioHwDev->handle();
     config->ext.mix.usecase.stream = AUDIO_STREAM_DEFAULT;
 }
+
+#ifdef CARBON_ACOUSTICS
+// getActiveTrackAcousticsData_l() must be called with ThreadBase::mLock held
+bool AudioFlinger::PlaybackThread::getAcousticsData_l(size_t index, AcousticsDataType &acousticsData)
+{
+    if (mType == OFFLOAD) {
+        return false;
+    }
+
+    if (index >= mActiveTracks.size()) {
+        return false;
+    }
+
+    sp<Track> track = mActiveTracks[index];
+
+    if (track->isFastTrack()) {
+        return false;
+    }
+
+    acousticsData.m_n32Io = id();
+    acousticsData.m_n32Pid = track->pid();
+    acousticsData.m_n32Session = track->sessionId();
+    acousticsData.m_n32StreamType = track->streamType();
+
+    return true;
+}
+#endif
 
 // ----------------------------------------------------------------------------
 
@@ -4024,10 +4460,56 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::MixerThread::prepareTrac
     // Delegate master volume control to effect in output mix effect chain if needed
     sp<EffectChain> chain = getEffectChain_l(AUDIO_SESSION_OUTPUT_MIX);
     if (chain != 0) {
+#ifndef CARBON_ACOUSTICS
         uint32_t v = (uint32_t)(masterVolume * (1 << 24));
         chain->setVolume_l(&v, &v);
         masterVolume = (float)((v + (1 << 23)) >> 24);
         chain.clear();
+#else
+        // The OS does not update the volume for AUDIO_SESSION_OUTPUT_MIX effect chain
+        // The value sent is always 1.0
+        //
+        // Acoustics is the only effect on AUDIO_SESSION_OUTPUT_MIX (session ID 0)
+        // The correct volume level is required for processing
+        //
+        // The following code calculates the highest configured volume level
+        // from the ACTIVE streams and uses it as the volume level for the
+        // AUDIO_SESSION_OUTPUT_MIX
+
+        #ifndef max
+            #define max(a,b) (a>b?a:b);
+        #endif
+
+        float mediaMixBufferVolume = -1;
+        float systemMixBufferVolume = -1;
+
+        if (masterVolume > 0) {
+            for (size_t i=0 ; i<mTracks.size() ; i++) {
+                // Tracks that are not active/resuming are not tested.
+                if (mTracks[i]->mState == TrackBase::ACTIVE || mTracks[i]->mState == TrackBase::RESUMING) {
+                    if (mTracks[i]->streamType() != AUDIO_STREAM_SYSTEM) {   // Exclude system sound
+                        // Find the ACTIVE track with the highest volume
+                        mediaMixBufferVolume = max(mediaMixBufferVolume, mStreamTypes[mTracks[i]->streamType()].volume);
+                    }
+                    else {
+                        systemMixBufferVolume = max(systemMixBufferVolume, mStreamTypes[mTracks[i]->streamType()].volume);
+                    }
+                }
+            }
+        }
+
+        if (mediaMixBufferVolume != -1) {
+            // COMMAND_SET_VOLUME for the effect chain will be called only if we found
+            // an active track.
+            uint32_t v = (uint32_t)(mediaMixBufferVolume * (1 << 24));
+            chain->setVolume_l(&v, &v);
+        }
+        else if (systemMixBufferVolume != -1) {
+            uint32_t v = (uint32_t)(systemMixBufferVolume * (1 << 24));
+            chain->setVolume_l(&v, &v);
+        }
+        chain.clear();
+#endif
     }
 
     // prepare a new state to push
@@ -4044,6 +4526,10 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::MixerThread::prepareTrac
 
     mMixerBufferValid = false;  // mMixerBuffer has no valid data until appropriate tracks found.
     mEffectBufferValid = false; // mEffectBuffer has no valid data until tracks found.
+
+#ifdef CARBON_ACOUSTICS
+    mAcousticsMixerTracks.clear();
+#endif
 
     for (size_t i=0 ; i<count ; i++) {
         const sp<Track> t = mActiveTracks[i];
@@ -4266,6 +4752,10 @@ AudioFlinger::PlaybackThread::mixer_state AudioFlinger::MixerThread::prepareTrac
             ALOGVV("track %d s=%08x [OK] on thread %p", name, cblk->mServer, this);
 
             mixedTracks++;
+
+#ifdef CARBON_ACOUSTICS
+            mAcousticsMixerTracks.add(track);
+#endif
 
             // track->mainBuffer() != mSinkBuffer or mMixerBuffer means
             // there is an effect chain connected to the track

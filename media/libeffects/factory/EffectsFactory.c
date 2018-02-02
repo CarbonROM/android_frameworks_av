@@ -16,6 +16,7 @@
 
 #define LOG_TAG "EffectsFactory"
 //#define LOG_NDEBUG 0
+#define CARBON_ACOUSTICS
 
 #include <stdlib.h>
 #include <string.h>
@@ -58,6 +59,21 @@ static int findSubEffect(const effect_uuid_t *uuid,
                lib_entry_t **lib,
                effect_descriptor_t **desc);
 
+#ifdef CARBON_ACOUSTICS
+static const effect_uuid_t s_cAcousticsUuid = { 0xae12da60, 0x99ac, 0x11df, 0xb456, { 0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b } };
+
+static inline bool isAcousticsEffect(effect_entry_t* fx){
+    bool bReturn = false;
+    effect_descriptor_t desc;
+
+    if (0 == (*fx->subItfe)->get_descriptor(fx->subItfe, &desc)) {
+        bReturn = (memcmp(&(desc.uuid), &s_cAcousticsUuid, sizeof(effect_uuid_t)) == 0);
+    }
+
+    return bReturn;
+}
+#endif
+
 /////////////////////////////////////////////////
 //      Effect Control Interface functions
 /////////////////////////////////////////////////
@@ -74,7 +90,14 @@ int Effect_Process(effect_handle_t self, audio_buffer_t *inBuffer, audio_buffer_
         pthread_mutex_unlock(&gLibLock);
         return -EPIPE;
     }
+
+#ifndef CARBON_ACOUSTICS
     pthread_mutex_lock(&fx->lib->lock);
+#else
+    if (!isAcousticsEffect(fx)){
+        pthread_mutex_lock(&fx->lib->lock);
+    }
+#endif
     pthread_mutex_unlock(&gLibLock);
 
     ret = (*fx->subItfe)->process(fx->subItfe, inBuffer, outBuffer);
@@ -99,7 +122,13 @@ int Effect_Command(effect_handle_t self,
         pthread_mutex_unlock(&gLibLock);
         return -EPIPE;
     }
+#ifndef CARBON_ACOUSTICS
     pthread_mutex_lock(&fx->lib->lock);
+#else
+    if (!isAcousticsEffect(fx)){
+        pthread_mutex_lock(&fx->lib->lock);
+    }
+#endif
     pthread_mutex_unlock(&gLibLock);
 
     ret = (*fx->subItfe)->command(fx->subItfe, cmdCode, cmdSize, pCmdData, replySize, pReplyData);

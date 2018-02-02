@@ -27,6 +27,8 @@
 #define AUDIO_POLICY_XML_CONFIG_FILE_PATH_MAX_LENGTH 128
 #define AUDIO_POLICY_XML_CONFIG_FILE_NAME "audio_policy_configuration.xml"
 
+#define CARBON_ACOUSTICS
+
 #include <inttypes.h>
 #include <math.h>
 
@@ -4592,6 +4594,14 @@ bool AudioPolicyManager::vectorsEqual(SortedVector<audio_io_handle_t>& outputs1,
     }
     return true;
 }
+
+#ifdef CARBON_ACOUSTICS
+static const effect_uuid_t s_cAcousticsEffectsUuid = { 0xae12da60, 0x99ac, 0x11df, 0xb456, { 0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b } };
+
+static bool isAcousticsEffect(effect_descriptor_t *desc) {
+    return (memcmp(&(desc->uuid), &s_cAcousticsEffectsUuid, sizeof(effect_uuid_t)) == 0);
+}
+#endif
 
 void AudioPolicyManager::checkOutputForStrategy(routing_strategy strategy)
 {

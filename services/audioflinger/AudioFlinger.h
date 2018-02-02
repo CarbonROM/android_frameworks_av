@@ -18,6 +18,12 @@
 #ifndef ANDROID_AUDIO_FLINGER_H
 #define ANDROID_AUDIO_FLINGER_H
 
+#define CARBON_ACOUSTICS
+
+#ifdef CARBON_ACOUSTICS
+#include "media/IMediaPlayerService.h"
+#endif
+
 #include "Configuration.h"
 #include <deque>
 #include <map>
@@ -676,6 +682,9 @@ private:
                 void onNonOffloadableGlobalEffectEnable();
                 bool isSessionAcquired_l(audio_session_t audioSession);
 
+#ifdef CARBON_ACOUSTICS
+                void onNonOffloadableAcousticsGlobalEffectEnable();
+#endif
                 // Store an effect chain to mOrphanEffectChains keyed vector.
                 // Called when a thread exits and effects are still attached to it.
                 // If effects are later created on the same session, they will reuse the same
@@ -861,6 +870,12 @@ private:
     sp<EffectsFactoryHalInterface> mEffectsFactoryHal;
 
     bool        mSystemReady;
+
+#ifdef CARBON_ACOUSTICS
+public:
+    sp<AcousticsThread> mAcousticsThread;
+#endif
+
 };
 
 #undef INCLUDING_FROM_AUDIOFLINGER_H
