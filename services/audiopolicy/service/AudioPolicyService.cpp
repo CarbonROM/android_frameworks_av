@@ -16,6 +16,7 @@
 
 #define LOG_TAG "AudioPolicyService"
 //#define LOG_NDEBUG 0
+#define CARBON_ACOUSTICS
 
 #include "Configuration.h"
 #undef __STRICT_ANSI__
@@ -79,6 +80,9 @@ void AudioPolicyService::onFirstRef()
         Mutex::Autolock _l(mLock);
         mAudioPolicyEffects = audioPolicyEffects;
     }
+#ifdef WAVES_PROCESSING
+    mAcousticsContextManager = new AcousticsContextManager(mAudioPolicyManager);
+#endif
 }
 
 AudioPolicyService::~AudioPolicyService()
@@ -1089,6 +1093,444 @@ int AudioPolicyService::setVoiceVolume(float volume, int delayMs)
 {
     return (int)mAudioCommandThread->voiceVolumeCommand(volume, delayMs);
 }
+
+#ifdef CARBON_ACOUSTICS
+static const int s_caCreatedByMaxxAudioIO[] = {13};
+static const unsigned int s_ciNumElementsCreatedByMaxxAudioIO = sizeof(s_caCreatedByMaxxAudioIO) / sizeof(int);
+static const effect_uuid_t s_cWavesEffectUuid = { 0xae12da60, 0x99ac, 0x11df, 0xb456, { 0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b } };
+static const int EFFECT_ID_INVALID = -1;
+
+AudioPolicyService::WavesContextManager::WavesContextManager(AudioPolicyInterface *pAudioPolicyManager)
+: m_bEnabled(false),
+  m_nMasterEffectId(EFFECT_ID_INVALID),
+  mAudioPolicyManager(pAudioPolicyManager)
+{
+    ALOGV("WavesContextManager created");
+}
+
+AudioPolicyService::WavesContextManager::~WavesContextManager()
+{
+    for (size_t i = 0; i < m_vIdToWavesContext.size() ; i++)
+    {
+        m_vIdToWavesContext.removeItemsAt(i);
+    }
+
+    ALOGV("WavesContextManager destroyed");
+}
+
+bool AudioPolicyService::WavesContextManager::isWavesEffect(const effect_descriptor_t *desc)
+{
+    ALOGV("WavesContextManager::isWavesEffect returning %s", (memcmp(&(desc->uuid), &s_cWavesEffectUuid, sizeof(effect_uuid_t)) == 0)?"true":"false");
+    return (memcmp(&(desc->uuid), &s_cWavesEffectUuid, sizeof(effect_uuid_t)) == 0);
+}
+
+bool AudioPolicyService::WavesContextManager::isMasterIo(const audio_io_handle_t io)
+{
+    ALOGV("WavesContextManager::isMasterIo %d", io);
+    bool bIsMasterIo = false;
+    for (unsigned int ii = 0; ii < s_ciNumElementsCreatedByMaxxAudioIO && !bIsMasterIo; ++ii)
+    {
+        bIsMasterIo = (s_caCreatedByMaxxAudioIO[ii] == io);
+    }
+    return bIsMasterIo;
+}
+
+bool AudioPolicyService::WavesContextManager::isWavesEffect(const int id) const
+{
+    ALOGV("WavesContextManager::isWavesEffect %d", id);
+    Mutex::Autolock _l(mLock);
+    ALOGV("WavesContextManager::isWavesEffect %d, lock acquired", id);
+//      ALOGV("WavesContextManager::isWavesEffect returning %s", (m_vIdToWavesContext.indexOfKey(id) >= 0)?"true":"false");
+    return (m_vIdToWavesContext.indexOfKey(id) >= 0);
+}
+
+sp<AudioPolicyService::WavesContext> AudioPolicyService::WavesContextManager::getEffect(const int id) const
+{
+    ALOGV("WavesContextManager::getEffect %d", id);
+    sp<WavesContext> pWavesContext;
+
+    int nIndex = m_vIdToWavesContext.indexOfKey(id);
+    if (nIndex >= 0)
+    {
+        pWavesContext = m_vIdToWavesContext.valueAt(nIndex);
+    }
+
+    return pWavesContext;
+}
+
+sp<AudioPolicyService::WavesContext> AudioPolicyService::WavesContextManager::getEffectOnIo(const audio_io_handle_t io) const
+{
+    ALOGV("WavesContextManager::getEffectOnIo %d", io);
+    bool bFound = false;
+    sp<WavesContext> pWavesContext;
+
+    for (size_t i = 0 ; i < m_vIdToWavesContext.size() ; i++)
+    {
+        pWavesContext = m_vIdToWavesContext.valueAt(i);
+        if (pWavesContext != 0 && pWavesContext->ioHandle() == io)
+        {
+            bFound = true;
+            break;
+        }
+    }
+
+    if (!bFound)
+    {
+        pWavesContext = 0;
+    }
+
+    return pWavesContext;
+}
+
+sp<AudioPolicyService::WavesContext> AudioPolicyService::WavesContextManager::getMasterEffect() const
+{
+    ALOGV("WavesContextManager::getMasterEffect");
+    sp<WavesContext> pMasterWavesContext = NULL;
+
+    int nIndex = m_vIdToWavesContext.indexOfKey(getMasterEffectId());
+    if (nIndex >= 0)
+    {
+        pMasterWavesContext = m_vIdToWavesContext.valueAt(nIndex);
+    }
+
+    return pMasterWavesContext;
+}
+
+void AudioPolicyService::WavesContextManager::setEffectEnabled(bool bEnabled)
+{
+    ALOGV("WavesContextManager::setEffectEnabled %d", bEnabled);
+    Mutex::Autolock _l(mLock);
+    ALOGV("WavesContextManager::setEffectEnabled %d, lock acquired", bEnabled);
+    m_bEnabled = bEnabled;
+
+    sp<WavesContext> pWavesContext = getEffect(getMasterEffectId());
+    if (pWavesContext != 0)
+    {
+        mLock.unlock();
+        pWavesContext->setEnabled(bEnabled);
+        mLock.lock();
+    }
+
+    syncSlaveEffectsEnableStateWithMasterEffect();
+
+    dump();
+}
+
+void AudioPolicyService::WavesContextManager::registerMasterEffect(
+                    const effect_descriptor_t *desc,
+                    const audio_io_handle_t io,
+                    const int id)
+{
+    ALOGV("WavesContextManager::registerMasterEffect io %d id %d", io, id);
+    Mutex::Autolock _l(mLock);
+    int nIndex = m_vIdToWavesContext.indexOfKey(id);
+
+    if (nIndex < 0)     // not registered yet
+    {
+        sp<WavesContext> pWavesContext = new WavesContext(*desc, io, NULL, id, false, true);
+        m_vIdToWavesContext.add(id, pWavesContext);
+        m_nMasterEffectId = id;
+
+        ALOGV("WavesContextManager::registerMasterEffect id %d Registered", m_nMasterEffectId);
+    }
+
+    // No need to set enable to slave effects here as we are expecting setEffectEnabled right after this call.
+    //syncSlaveEffectsEnableStateWithMasterEffect();
+
+    dump();
+}
+
+void AudioPolicyService::WavesContextManager::registerSlaveEffect(
+                    const audio_io_handle_t io,
+                    sp<AudioEffect> audio_effect)
+{
+    ALOGV("WavesContextManager::registerSlaveEffect io %d effect %p", io, audio_effect.get());
+    if (audio_effect != NULL)
+    {
+        int id = audio_effect->id();
+        effect_descriptor_t desc = audio_effect->descriptor();
+
+        int nIndex = m_vIdToWavesContext.indexOfKey(id);
+
+        if (nIndex < 0) // not registered yet, register here
+        {
+            ALOGV("WavesContextManager::registerSlaveEffect id %d Registered %p", id, audio_effect.get());
+            m_vIdToWavesContext.add(id, new WavesContext(desc, io, audio_effect, id, false, false));
+            syncSlaveEffectsEnableStateWithMasterEffect();
+        }
+        else // already registered - check if effect has changed.
+        {
+            sp<WavesContext> pWavesContext = m_vIdToWavesContext.valueAt(nIndex);
+            if (audio_effect != pWavesContext->audioEffect())   // effect has changed?!
+            {
+                // something's wrong. this shouldn't happen.
+                ALOGV("WavesContextManager::registerSlaveEffect id %d - duplicated registration! something's wrong!", id);
+                ALOGV("WavesContextManager::registerSlaveEffect id %d Registered %p", id, audio_effect.get());
+                m_vIdToWavesContext.replaceValueAt(id, new WavesContext(desc, io, audio_effect, id, false, false));
+                mLock.unlock();
+                pWavesContext = 0;
+                mLock.lock();
+                syncSlaveEffectsEnableStateWithMasterEffect();
+            }
+        }
+    }
+    else
+    {
+        ALOGV("WavesContextManager::registerSlaveEffect - no valid effect!");
+    }
+
+    dump();
+}
+
+void AudioPolicyService::WavesContextManager::unregisterEffect(const int id)
+{
+    ALOGV("WavesContextManager::unregisterEffect %d", id);
+    Mutex::Autolock _l(mLock);
+    ALOGV("WavesContextManager::unregisterEffect %d, lock acuired", id);
+
+    bool bIsMaster = false;
+    sp<WavesContext> pWavesContext = getEffect(id);
+
+    if (pWavesContext != 0)
+    {
+        bIsMaster = pWavesContext->isMasterIo();
+    }
+
+    m_vIdToWavesContext.removeItem(id);
+    mLock.unlock();
+    pWavesContext = 0;
+    mLock.lock();
+
+    if (bIsMaster)
+    {
+        // Master effect is removed, so this function will set all slaves effect to disable
+        syncSlaveEffectsEnableStateWithMasterEffect();
+    }
+
+    dump();
+}
+
+void AudioPolicyService::WavesContextManager::unregisterEffectOnIo(const audio_io_handle_t io)
+{
+    ALOGV("WavesContextManager::unregisterEffectOnIo %d", io);
+    Mutex::Autolock _l(mLock);
+    ALOGV("WavesContextManager::unregisterEffect on io %d, lock acquired", io);
+    bool bIsMaster = false;
+    sp<WavesContext> pWavesContext = getEffectOnIo(io);
+
+    if (pWavesContext != 0)
+    {
+        int id = pWavesContext->id();
+
+        if (id != EFFECT_ID_INVALID)
+        {
+            ALOGV("WavesContextManager::unregisterEffect on io %d - found id %d", io, id);
+            m_vIdToWavesContext.removeItem(id);
+        }
+        bIsMaster = pWavesContext->isMasterIo();
+
+        mLock.unlock();
+        pWavesContext = 0;
+        mLock.lock();
+    }
+
+    if (bIsMaster)
+    {
+        // Master effect is removed, so this function will set all slaves effect to disable
+        syncSlaveEffectsEnableStateWithMasterEffect();
+    }
+
+    dump();
+}
+
+bool AudioPolicyService::WavesContextManager::shouldCreateEffectOnIo(const audio_io_handle_t io, const audio_output_flags_t flag) const
+{
+        ALOGV("WavesContextManager::shouldCreateEffectOnIo %d %x", io, flag);
+    Mutex::Autolock _l(mLock);
+    ALOGV("WavesContextManager::shouldCreateEffectOnIo %d %x, lock acquired", io, flag);
+    bool bShouldCreateEffectOnIo = false;
+
+    if ((flag & AUDIO_OUTPUT_FLAG_COMPRESS_OFFLOAD) == 0 &&
+        (flag & AUDIO_OUTPUT_FLAG_DIRECT) == 0)
+    {
+        if (!isMasterIo(io) && io > 0)
+        {
+            bool bAlreadyRegistered = false;
+
+            for (size_t i = 0 ; i < m_vIdToWavesContext.size() && !bAlreadyRegistered ; i++)
+            {
+                if (m_vIdToWavesContext.valueAt(i)->ioHandle() == io)
+                {
+                    bAlreadyRegistered = true;
+                }
+            }
+
+            if (bAlreadyRegistered)
+            {
+                ALOGV("WavesContextManager::shouldCreateEffectOnIo already exist on IO: %d", io);
+            }
+            else
+            {
+                ALOGV("WavesContextManager::shouldCreateEffectOnIo should create on IO: %d", io);
+                bShouldCreateEffectOnIo = true;
+            }
+        }
+        else
+        {
+            ALOGV("WavesContextManager::shouldCreateEffectOnIo: io %d reserved for application, not creating.", io);
+        }
+    }
+    else
+    {
+        ALOGV("WavesContextManager::shouldCreateEffectOnIo: unsupported output flag, not creating.");
+    }
+
+    return bShouldCreateEffectOnIo;
+}
+
+status_t AudioPolicyService::WavesContextManager::createEffectOnIo(const audio_io_handle_t io)
+{
+    ALOGV("WavesContextManager::createEffectOnIo %d", io);
+    sp<AudioEffect> pWavesEffect = new AudioEffect(NULL, String16(""), (effect_uuid_t*)&s_cWavesEffectUuid, 0, 0, 0, AUDIO_SESSION_OUTPUT_MIX, io);
+
+    status_t status = pWavesEffect -> initCheck();
+
+    if (NO_ERROR == status)
+    {
+    ALOGV("WavesContextManager::createEffectOnIo %d, before lock", io);
+    Mutex::Autolock _l(mLock);
+    ALOGV("WavesContextManager::createEffectOnIo %d, after lock", io);
+    registerSlaveEffect(io, pWavesEffect);
+    syncSlaveEffectsEnableStateWithMasterEffect();
+
+    ALOGV("WavesContextManager::createEffectOnIo: Effect %p created successfully on io %d", pWavesEffect.get(), io);
+
+        dump();
+    }
+    else
+    {
+        ALOGV("WavesContextManager::createEffectOnIo: Effect failed to create, error: %d", status);
+    }
+    return status;
+}
+
+
+bool AudioPolicyService::WavesContextManager::isMasterEffect(const int id) const
+{
+    ALOGV("WavesContextManager::isMasterEffect %d", id);
+    Mutex::Autolock _l(mLock);
+    ALOGV("WavesContextManager::isMasterEffect %d, lock acquired", id);
+    bool bIsMasterEffect = false;
+
+    sp<WavesContext> pWavesContext = getEffect(id);
+    if (pWavesContext != 0)
+    {
+        bIsMasterEffect = (pWavesContext->isMasterIo());
+    }
+//      ALOGV("WavesContextManager::IsMasterEffect returning %s", bIsMasterEffect?"true":"false");
+    return bIsMasterEffect;
+}
+
+status_t AudioPolicyService::WavesContextManager::syncSlaveEffectsEnableStateWithMasterEffect()
+{
+    ALOGV("WavesContextManager::syncSlaveEffectsEnableStateWithMasterEffect");
+
+    bool bIsMasterEffectEnabled = isMasterEffectEnabled();
+
+    for (size_t i = 0; i < m_vIdToWavesContext.size() ; i++)
+    {
+        sp<WavesContext> pWavesContext = m_vIdToWavesContext.valueAt(i);
+
+        if (!pWavesContext->isMasterIo())       //slave
+        {
+            ALOGV("WavesContextManager::syncSlaveEffectsEnableStateWithMasterEffect Slave Effect id=%d %s", pWavesContext->id(), bIsMasterEffectEnabled?"Enabled":"Disabled");
+            mLock.unlock();
+            pWavesContext->setEnabled(bIsMasterEffectEnabled);
+            mLock.lock();
+        }
+    }
+    return NO_ERROR;
+}
+
+bool AudioPolicyService::WavesContextManager::isMasterEffectEnabled() const
+{
+    ALOGV("WavesContextManager::isMasterEffectEnabled");
+
+    bool isMasterEffectEnabled = false;
+    sp<WavesContext> pMasterWavesContext = getMasterEffect();
+
+    if (pMasterWavesContext != 0)
+    {
+        isMasterEffectEnabled = pMasterWavesContext->isEnabled();
+    }
+
+    return isMasterEffectEnabled;
+}
+
+void AudioPolicyService::WavesContextManager::dump() const
+{
+    ALOGV("WavesContextManager ===== Total Entries = %d", m_vIdToWavesContext.size());
+
+    for (size_t i = 0 ; i < m_vIdToWavesContext.size() ; i++)
+    {
+        sp<WavesContext> pWavesContext = m_vIdToWavesContext.valueAt(i);
+        if (pWavesContext != 0) { pWavesContext->dump(i); }
+    }
+}
+
+AudioPolicyService::WavesContext::WavesContext(
+        const effect_descriptor_t desc,
+        const audio_io_handle_t io,
+        sp<AudioEffect> audio_effect,
+        const int id,
+        const bool enabled,
+        const bool isMasterIo)
+: mDesc(desc),
+  mIo(io),
+  mAudioEffect(audio_effect),
+  mId(id),
+  mEnabled(enabled),
+  mIsMasterIo(isMasterIo)
+{
+    ALOGV("WavesContext created %p", audio_effect.get());
+};
+
+AudioPolicyService::WavesContext::~WavesContext()
+{
+    ALOGV("WavesContext destroyed");
+};
+
+status_t AudioPolicyService::WavesContext::setEnabled(const bool bEnabled)
+{
+    ALOGV("WavesContext setEnabled id %d %s", mId, bEnabled?"Enabled":"Disabled");
+
+    mEnabled = bEnabled;
+
+    if (mAudioEffect != NULL)
+    {
+        mAudioEffect->setEnabled(mEnabled);
+    }
+
+    return NO_ERROR;
+}
+
+void AudioPolicyService::WavesContext::dump(size_t index) const
+{
+    if (mIsMasterIo)
+    {
+        ALOGV("WavesContext[%d] Master Effect - %s", index, mEnabled?"Enabled":"Disabled");
+        ALOGV("WavesContext[%d] ID = %d", index, mId);
+        ALOGV("WavesContext[%d] ioHandle = %d", index, mIo);
+    }
+    else
+    {
+        ALOGV("WavesContext[%d] Slave Effect - %s", index, mEnabled?"Enabled":"Disabled");
+        ALOGV("WavesContext[%d] ID = %d", index, mId);
+        ALOGV("WavesContext[%d] ioHandle = %d", index, mIo);
+        ALOGV("WavesContext[%d] AudioEffect = %p", index, mAudioEffect.get());
+    }
+}
+#endif
 
 extern "C" {
 audio_module_handle_t aps_load_hw_module(void *service __unused,

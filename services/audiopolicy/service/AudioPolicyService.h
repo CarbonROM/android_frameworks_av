@@ -17,6 +17,8 @@
 #ifndef ANDROID_AUDIOPOLICYSERVICE_H
 #define ANDROID_AUDIOPOLICYSERVICE_H
 
+#define CARBON_ACOUSTICS
+
 #include <cutils/misc.h>
 #include <cutils/config_utils.h>
 #include <cutils/compiler.h>
@@ -581,6 +583,88 @@ private:
     // Manage all effects configured in audio_effects.conf
     sp<AudioPolicyEffects> mAudioPolicyEffects;
     audio_mode_t mPhoneState;
+#ifdef WAVES_PROCESSING
+public:
+    class WavesContext : public RefBase {
+    public:
+        WavesContext(
+                const effect_descriptor_t desc,
+                const audio_io_handle_t io,
+                sp<AudioEffect> audio_effect,
+                const int id,
+                const bool enabled,
+                const bool isMasterIo);
+
+        virtual ~WavesContext();
+
+        int                 id()            const    {return mId;}
+        audio_io_handle_t   ioHandle()       const    {return mIo;}
+        sp<AudioEffect>     audioEffect()   const    {return mAudioEffect;}
+        bool                isMasterIo()    const    {return mIsMasterIo;}
+        bool                isEnabled()     const    {return mEnabled;}
+        status_t            setEnabled(const bool bEnabled);
+
+        void                dump(size_t index)    const;
+    private:
+
+        effect_descriptor_t     descriptor()    const    {return mDesc;}
+
+        effect_descriptor_t mDesc;
+        audio_io_handle_t mIo;
+        sp<AudioEffect> mAudioEffect;
+        int mId;
+        bool mEnabled;
+        bool mIsMasterIo;
+    };
+
+    class WavesContextManager : public RefBase {
+    public:
+        WavesContextManager(AudioPolicyInterface *pAudioPolicyManager);
+        virtual ~WavesContextManager();
+
+        static bool isWavesEffect(const effect_descriptor_t *desc);
+        static bool isMasterIo(const audio_io_handle_t io);
+
+        bool isWavesEffect(const int id) const;
+        bool isMasterEffect(const int id) const;
+
+        bool shouldCreateEffectOnIo(const audio_io_handle_t io,
+                            const audio_output_flags_t flag) const;
+        status_t createEffectOnIo(const audio_io_handle_t io);
+        void registerMasterEffect(
+                            const effect_descriptor_t *desc,
+                            const audio_io_handle_t io,
+                            const int id);
+        void unregisterEffect(const int id);
+        void unregisterEffectOnIo(const audio_io_handle_t io);
+        void setEffectEnabled(const bool bEnable);
+
+    private:
+        status_t syncSlaveEffectsEnableStateWithMasterEffect();
+        bool isMasterEffectEnabled() const;
+
+        int getMasterEffectId() const   { return m_nMasterEffectId; }
+
+        void dump() const;
+
+        sp<WavesContext> getEffect(const int id) const;
+        sp<WavesContext> getEffectOnIo(const audio_io_handle_t io) const;
+        sp<WavesContext> getMasterEffect() const;
+
+        void registerSlaveEffect(
+                            const audio_io_handle_t io,
+                            sp<AudioEffect> audio_effect);
+
+        bool m_bEnabled;
+        int m_nMasterEffectId;
+        AudioPolicyInterface *mAudioPolicyManager;
+        KeyedVector< int, sp<WavesContext> > m_vIdToWavesContext;
+
+        mutable Mutex mLock;
+    };
+
+    sp<WavesContextManager> mWavesContextManager;
+#endif
 };
 
 }; // namespace android

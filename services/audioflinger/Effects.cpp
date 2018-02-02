@@ -18,6 +18,7 @@
 
 #define LOG_TAG "AudioFlinger"
 //#define LOG_NDEBUG 0
+#define CARBON_ACOUSTICS
 
 #include "Configuration.h"
 #include <utils/Log.h>
@@ -50,6 +51,12 @@
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
 namespace android {
+
+#ifdef CARBON_ACOUSTICS
+static const effect_uuid_t s_cAcousticsEffectUuid = { 0xae12da60, 0x99ac, 0x11df, 0xb456, { 0x00, 0x02, 0xa5, 0xd5, 0xc5, 0x1b } };
+static bool     s_bIsLockedAfWhenEffectEnable = false;
+static Mutex g_LockGlobalEffectEnable;
+#endif
 
 // ----------------------------------------------------------------------------
 //  EffectModule implementation
@@ -1207,12 +1214,34 @@ status_t AudioFlinger::EffectHandle::enable()
     mEnabled = true;
 
     sp<ThreadBase> thread = effect->thread().promote();
+
+#ifdef CARBON_ACOUSTICS
+    bool bLockedInThisContext = false;
+    if (AUDIO_SESSION_OUTPUT_MIX == mEffect->sessionId() && thread != 0) {
+        g_LockGlobalEffectEnable.lock();
+        if (!s_bIsLockedAfWhenEffectEnable) {
+            thread -> mAudioFlinger -> mLock.lock();
+            s_bIsLockedAfWhenEffectEnable = true;
+            bLockedInThisContext = true;
+        }
+        g_LockGlobalEffectEnable.unlock();
+    }
+#endif
+
     if (thread != 0) {
         thread->checkSuspendOnEffectEnabled(effect, true, effect->sessionId());
     }
 
     // checkSuspendOnEffectEnabled() can suspend this same effect when enabled
     if (effect->suspended()) {
+#ifdef CARBON_ACOUSTICS
+        if (bLockedInThisContext) {
+            g_LockGlobalEffectEnable.lock();
+            thread -> mAudioFlinger -> mLock.unlock();
+            s_bIsLockedAfWhenEffectEnable = false;
+            g_LockGlobalEffectEnable.unlock();
+        }
+#endif
         return NO_ERROR;
     }
 
@@ -1234,11 +1263,25 @@ status_t AudioFlinger::EffectHandle::enable()
                     t->invalidateTracks(AUDIO_STREAM_MUSIC);
                 }
                 if (effect->sessionId() == AUDIO_SESSION_OUTPUT_MIX) {
+#ifndef CARBON_ACOUSTICS
                     thread->mAudioFlinger->onNonOffloadableGlobalEffectEnable();
+#else
+                    thread->mAudioFlinger->onNonOffloadableAcousticsGlobalEffectEnable();
+#endif
                 }
             }
         }
     }
+#ifdef CARBON_ACOUSTICS
+    if (bLockedInThisContext)
+    {
+        g_LockGlobalEffectEnable.lock();
+        thread -> mAudioFlinger -> mLock.unlock();
+        s_bIsLockedAfWhenEffectEnable = false;
+        g_LockGlobalEffectEnable.unlock();
+    }
+#endif
+
     return status;
 }
 
@@ -2141,6 +2184,9 @@ bool AudioFlinger::EffectChain::isEffectEligibleForSuspend(const effect_descript
     // auxiliary effects and visualizer are never suspended on output mix
     if ((mSessionId == AUDIO_SESSION_OUTPUT_MIX) &&
         (((desc.flags & EFFECT_FLAG_TYPE_MASK) == EFFECT_FLAG_TYPE_AUXILIARY) ||
+#ifdef CARBON_ACOUSTICS
+         (memcmp(&(desc.uuid), &s_cAcousticsEffectUuid, sizeof(effect_uuid_t)) == 0) ||
+#endif
          (memcmp(&desc.type, SL_IID_VISUALIZATION, sizeof(effect_uuid_t)) == 0) ||
          (memcmp(&desc.type, SL_IID_VOLUME, sizeof(effect_uuid_t)) == 0))) {
         return false;

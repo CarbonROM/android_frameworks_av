@@ -19,6 +19,8 @@
 
 //#define LOG_NDEBUG 0
 #define LOG_TAG "MediaPlayerService"
+#define CARBON_ACOUSTICS
+
 #include <utils/Log.h>
 
 #include <sys/types.h>
@@ -1126,6 +1128,28 @@ status_t MediaPlayerService::Client::isPlaying(bool* state)
     ALOGV("[%d] isPlaying: %d", mConnId, *state);
     return NO_ERROR;
 }
+
+#ifdef CARBON_ACOUSTICS
+status_t MediaPlayerService::Client::isPlayingWithoutLock(bool* state)
+{
+    *state = false;
+    if (mPlayer == 0) return UNKNOWN_ERROR;
+    *state = mPlayer->isPlaying();
+    ALOGV("[%d] isPlaying: %d", mConnId, *state);
+    return NO_ERROR;
+}
+
+audio_stream_type_t MediaPlayerService::Client::getAudioStreamType()
+{
+    audio_stream_type_t type = AUDIO_STREAM_DEFAULT;
+    Mutex::Autolock l(mLock);
+    if (mAudioOutput != 0)
+    {
+        type = mAudioOutput->getAudioStreamType();
+    }
+    return type;
+}
+#endif
 
 status_t MediaPlayerService::Client::setPlaybackSettings(const AudioPlaybackRate& rate)
 {
@@ -2753,4 +2777,33 @@ status_t MediaPlayerService::BatteryTracker::pullBatteryData(Parcel* reply) {
     }
     return NO_ERROR;
 }
+
+#ifdef CARBON_ACOUSTICS
+status_t MediaPlayerService::getAcousticsData(int *size, int *activeClientPids, int *activeClientSessions, int *activeClientStreamTypes) {
+    if (size == NULL || *size == 0 || activeClientPids == NULL || activeClientSessions == NULL || activeClientStreamTypes == NULL) {
+        ALOGV("MediaPlayerService::getAcousticsData() BAD_VALUE");
+        return BAD_VALUE;
+    }
+
+    Mutex::Autolock lock(mLock);
+    int nSize = 0;
+    for (unsigned int i = 0; i < mClients.size() && nSize < *size; i++) {
+        sp<Client> c = mClients[i].promote();
+        bool state = false;
+
+        if (c != NULL && NO_ERROR == c->isPlayingWithoutLock(&state) && state == true) {
+            activeClientPids[nSize] = (int)c->pid();
+            activeClientSessions[nSize] = (int)c->getAudioSessionId();
+            activeClientStreamTypes[nSize] = (int)c->getAudioStreamType();
+            ALOGV("MediaPlayerService::getAcousticsData() Data[%d] = (%d, %d, %d)", nSize, activeClientPids[nSize], activeClientSessions[nSize], activeClientStreamTypes[nSize]);
+            nSize++;
+        }
+    }
+    *size = nSize;
+
+    ALOGV("MediaPlayerService::getAcousticsData() got size %d", *size);
+
+    return NO_ERROR;
+}
+#endif
 } // namespace android

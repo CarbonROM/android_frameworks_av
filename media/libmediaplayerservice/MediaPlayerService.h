@@ -18,6 +18,8 @@
 #ifndef ANDROID_MEDIAPLAYERSERVICE_H
 #define ANDROID_MEDIAPLAYERSERVICE_H
 
+#define CARBON_ACOUSTICS
+
 #include <arpa/inet.h>
 
 #include <utils/threads.h>
@@ -250,6 +252,9 @@ public:
     virtual void                addBatteryData(uint32_t params);
     // API for the Battery app to pull the data of codecs usage
     virtual status_t            pullBatteryData(Parcel* reply);
+#ifdef CARBON_ACOUSTICS
+    virtual status_t getAcousticsData(int *size, int *activeClientPids, int *activeClientSessions, int *activeClientStreamTypes);
+#endif
 private:
     struct BatteryTracker {
         BatteryTracker();
@@ -316,6 +321,10 @@ private:
         virtual status_t        stop();
         virtual status_t        pause();
         virtual status_t        isPlaying(bool* state);
+#ifdef CARBON_ACOUSTICS
+        virtual status_t        isPlayingWithoutLock(bool* state);
+        virtual audio_stream_type_t       getAudioStreamType();
+#endif
         virtual status_t        setPlaybackSettings(const AudioPlaybackRate& rate);
         virtual status_t        getPlaybackSettings(AudioPlaybackRate* rate /* nonnull */);
         virtual status_t        setSyncSettings(const AVSyncSettings& rate, float videoFpsHint);
