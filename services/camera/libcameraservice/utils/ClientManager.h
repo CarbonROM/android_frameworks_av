@@ -461,7 +461,7 @@ ClientManager<KEY, VALUE, LISTENER>::wouldEvictLocked(
                 evictList.push_back(client);
                 return evictList;
             } else if (conflicting || ((totalCost > mMaxCost && curCost > 0) &&
-                    (curPriority >= priority) &&
+                    (curPriority >= priority && priority.getScore() >= 0) &&
                     !(highestPriorityOwner == owner && owner == curOwner))) {
                 // Add a pre-existing client to the eviction list if:
                 // - We are adding a client with higher priority that conflicts with this one.
