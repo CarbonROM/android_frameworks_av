@@ -153,6 +153,9 @@ cc_library_shared {
             use_legacy_rescaling: {
                 cflags: ["-DUSE_LEGACY_RESCALING"],
             },
+            mtk_hardware: {
+                cppflags: ["-DMTK_HARDWARE"],
+            },
         },
     },
 
