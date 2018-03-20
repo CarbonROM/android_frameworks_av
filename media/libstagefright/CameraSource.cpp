@@ -670,6 +670,11 @@ status_t CameraSource::initWithCameraAccess(
         CHECK_EQ((status_t)OK, mCamera->setPreviewTarget(mSurface));
     }
 
+    // Some legacy devices might want to force storeMetaDataInVideoBuffers to false
+    if (property_get_bool("media.stagefright.metadata_disable", false)) {
+        storeMetaDataInVideoBuffers = false;
+    }
+
     // By default, store real data in video buffers.
     mVideoBufferMode = hardware::ICamera::VIDEO_BUFFER_MODE_DATA_CALLBACK_YUV;
     if (storeMetaDataInVideoBuffers) {
