@@ -57,6 +57,8 @@
 #include <private/android_filesystem_config.h>
 #include <utils/Log.h>
 #include <utils/Singleton.h>
+#include <cutils/properties.h>
+#include <string.h>
 
 namespace android {
 
@@ -416,7 +418,13 @@ sp<MediaCodec> MediaCodec::CreateByType(
         uid_t uid) {
     sp<MediaCodec> codec = new MediaCodec(looper, pid, uid);
 
-    const status_t ret = codec->init(mime, true /* nameIsType */, encoder);
+    status_t ret = -1;
+   if(!strcmp(mime.c_str(),"video/avc") && encoder && property_get_bool("persist.sys.google_avc_enc",0)) {
+	ret = codec->init("OMX.google.h264.encoder",false,encoder);
+	ALOGI("persist.sys.google_avc_enc is set.");
+    }
+   else
+	ret = codec->init(mime, true /* nameIsType */, encoder);
     if (err != NULL) {
         *err = ret;
     }
@@ -428,7 +436,14 @@ sp<MediaCodec> MediaCodec::CreateByComponentName(
         const sp<ALooper> &looper, const AString &name, status_t *err, pid_t pid, uid_t uid) {
     sp<MediaCodec> codec = new MediaCodec(looper, pid, uid);
 
-    const status_t ret = codec->init(name, false /* nameIsType */, false /* encoder */);
+    status_t ret = -1;
+   if((!strcmp(name.c_str(),"OMX.IMG.TOPAZ.VIDEO.Encoder") && property_get_bool("persist.sys.google_avc_enc",0)) ||
+       (!strcmp(name.c_str(),"OMX.hisi.video.encoder.avc") && property_get_bool("persist.sys.google_avc_enc",0))) {
+	ret = codec->init("OMX.google.h264.encoder",false,true);
+	ALOGI("persist.sys.google_avc_enc is set.");
+    }
+   else
+	ret = codec->init(name, false /* nameIsType */, false /* encoder */);
     if (err != NULL) {
         *err = ret;
     }
