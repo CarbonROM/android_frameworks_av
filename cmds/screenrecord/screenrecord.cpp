@@ -34,6 +34,7 @@
 #define ATRACE_TAG ATRACE_TAG_GRAPHICS
 //#define LOG_NDEBUG 0
 #include <utils/Log.h>
+#include <cutils/properties.h>
 
 #include <binder/IPCThreadState.h>
 #include <utils/Errors.h>
@@ -65,6 +66,7 @@ static const uint32_t kMaxTimeLimitSec = 1800;       // 30 minutes
 static const uint32_t kFallbackWidth = 1280;        // 720p
 static const uint32_t kFallbackHeight = 720;
 static const char* kMimeTypeAvc = "video/avc";
+static const char* kGoogleH264Encoder = "OMX.google.h264.encoder";
 
 // Command-line parameters.
 static bool gVerbose = false;           // chatty on stdout
@@ -169,7 +171,14 @@ static status_t prepareEncoder(float displayFps, sp<MediaCodec>* pCodec,
     looper->setName("screenrecord_looper");
     looper->start();
     ALOGV("Creating codec");
-    sp<MediaCodec> codec = MediaCodec::CreateByType(looper, kMimeTypeAvc, true);
+
+    sp<MediaCodec> codec = NULL;
+    if(!strcmp(kMimeTypeAvc,"video/avc") && property_get_bool("persist.sys.sr_google_avc_enc", 0)) {
+	ALOGI("persist.sys.sr_google_avc_enc is set");
+    	codec = MediaCodec::CreateByComponentName(looper, kGoogleH264Encoder);
+    } else
+    	codec = MediaCodec::CreateByType(looper, kMimeTypeAvc, true);
+
     if (codec == NULL) {
         fprintf(stderr, "ERROR: unable to create %s codec instance\n",
                 kMimeTypeAvc);
