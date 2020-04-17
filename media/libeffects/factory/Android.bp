@@ -39,8 +39,6 @@ cc_binary {
     vendor: true,
     srcs: ["test/DumpConfig.cpp"],
 
-    compile_multilib: "32",
-
     cflags: [
         "-Wall",
         "-Wextra",

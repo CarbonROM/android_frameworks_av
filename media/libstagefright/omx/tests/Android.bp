@@ -29,6 +29,4 @@ cc_test {
         "-Werror",
         "-Wall",
     ],
-
-    compile_multilib: "32",
 }

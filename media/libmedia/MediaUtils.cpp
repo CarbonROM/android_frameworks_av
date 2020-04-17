@@ -26,8 +26,6 @@
 
 #include "MediaUtils.h"
 
-extern "C" void __scudo_set_rss_limit(size_t, int) __attribute__((weak));
-
 namespace android {
 
 void limitProcessMemory(const char *property, size_t numberOfBytes,
@@ -57,13 +55,6 @@ void limitProcessMemory(const char *property, size_t numberOfBytes,
     int64_t propVal = property_get_int64(property, maxMem);
     if (propVal > 0 && uint64_t(propVal) <= SIZE_MAX) {
         maxMem = propVal;
-    }
-
-    // If Scudo is in use, enforce the hard RSS limit (in MB).
-    if (maxMem != SIZE_MAX && &__scudo_set_rss_limit != 0) {
-      __scudo_set_rss_limit(maxMem >> 20, 1);
-      ALOGV("Scudo hard RSS limit set to %zu MB", maxMem >> 20);
-      return;
     }
 
     if (!android_mallopt(M_SET_ALLOCATION_LIMIT_BYTES, &maxMem,
