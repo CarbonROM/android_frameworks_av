@@ -1118,7 +1118,6 @@ bool MediaCodec::profileSupport10Bits(const AString &mime, const int32_t profile
     return false;
 }
 
-
 // called to update info being passed back via getMetrics(), which is a
 // unique copy for that call, no concurrent access worries.
 void MediaCodec::updateEphemeralMediametrics(mediametrics_handle_t item) {
